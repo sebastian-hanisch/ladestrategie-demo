@@ -4,10 +4,11 @@
 
 Fall-Demo (Transport & Tourenplanung) für die Website "Sebastian Hanisch – Operations Research und
 Machine Learning": ein E-Lieferfahrzeug fährt eine Strecke mit **frei einstellbaren**
-Schnellladesäulen-Positionen (Anzahl, Abstände und Start frei wählbar, drei Beispielstrecken als
-Schnellstart). Entschieden wird an jeder Säule, wie viel geladen und wie lange während der Fahrt
-vorher geheizt wird. Kälte erhöht den Verbrauch beim Fahren und senkt den Ladewirkungsgrad; Heizen
-kostet selbst Energie, kann sich aber lohnen. Gesucht ist die Strategie mit dem geringsten
+Schnellladesäulen-Positionen (Anzahl, Abstände und Start frei wählbar, drei generische
+Beispielstrecken oben als Schnellstart – keine behauptete reale Geografie, nur die Distanzen
+zählen). Entschieden wird an jeder Säule, wie viel geladen und wie lange während der Fahrt vorher
+geheizt wird. Kälte erhöht den Verbrauch beim Fahren und senkt den Ladewirkungsgrad; Heizen kostet
+selbst Energie, kann sich aber lohnen. Gesucht ist die Strategie mit dem geringsten
 Netzenergieverbrauch über die ganze Strecke.
 
 ## Warum dieses Problem
@@ -62,7 +63,9 @@ Dynamische Programmierung über (Haltepunkt, Akkustand): je Ladestopp wird über
 numpy-vektorisierte Rastersuche über Heizdauer und Lademenge die energieminimale Kombination gesucht
 (`kosten_bei_stopp` / `_kosten_batch` in `lade_planung.py`), die äußere DP (`plane_route`) verkettet
 das über alle Stopps zur global energieminimalen Strategie. Exakt bis auf die Diskretisierung – gegen
-eine deutlich feinere Auflösung geprüft (`tests/test_lade_planung.py`), Abweichung unter 3 %.
+eine deutlich feinere Auflösung geprüft (`tests/test_lade_planung.py`), Abweichung unter 3 %. Die
+vollständige Bellman-Rekursion, die Wärme-ODE und die Kostenfunktion je Stopp stehen als eigener
+Expander "📐 Mathematische Formulierung" in der App.
 
 ## Dateien
 
@@ -91,10 +94,6 @@ Struktur und Namenskonvention (`lade_*`-Präfix) folgen dem übrigen Demo-Portfo
   Temperatureffekt. Diese Demo ergänzt genau das Fehlende: eine einzelne Strecke, energieminimal, mit
   Temperaturphysik bei Verbrauch **und** Ladewirkungsgrad – kein Duplikat, sondern die thermische
   Tiefe, die dort bewusst außen vor blieb.
-- **[Zentralität](https://sebastianhanisch-centrality-demo.streamlit.app/)** und
-  **[Strukturkennzahlen und Nullmodelle](https://sebastianhanisch-strukturkennzahlen-demo.streamlit.app/)**
-  sind die anderen Analyse-Karten der Graphen-und-Netzwerke-Linie – dieselbe Grundidee (eine Kennzahl
-  berechnen und interpretieren, kein Verfahrensvergleich), andere Kennzahlen.
 - Modell und Algorithmus (ressourcenbeschränkter kürzester Weg: Akkustand als Ressource, dynamische
   Programmierung über diskretisierte Zustände) folgen demselben Muster wie die
   **[Kürzeste-Wege-Linie](https://sebastianhanisch.net/konzepte-kuerzeste-wege.html)** der

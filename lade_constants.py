@@ -11,19 +11,21 @@ ANZAHL_SAEULEN_MIN, ANZAHL_SAEULEN_MAX, ANZAHL_SAEULEN_STANDARD = 1, 6, 3
 DISTANZ_MIN, DISTANZ_MAX = 20.0, 300.0  # km, je Abschnitt
 
 # Jedes Preset: Startname, dann Etappen (Name, Distanz in km) - die letzte Etappe ist das Ziel, alle
-# davor sind Ladesäulen. Realistische deutsche Fernstraßen-Abstände zwischen Schnellladesäulen.
+# davor sind Ladesäulen. Generische Namen (kein realer Ort) - die Distanzen sind das, was zählt, nicht
+# eine behauptete Geografie. Alle drei über den vollen Temperaturbereich (-20 °C bis +20 °C) mit dem
+# Standardfahrzeug auf Erreichbarkeit geprüft.
 PRESETS = {
-    "München → Leipzig (Standard)": {
-        "start": "Depot (München)",
-        "etappen": [("Schnelllader Ingolstadt", 80.0), ("Schnelllader Nürnberg", 90.0), ("Schnelllader Hof", 100.0), ("Ziel (Leipzig)", 130.0)],
+    "Standardstrecke": {
+        "start": "Depot",
+        "etappen": [("Ladesäule 1", 80.0), ("Ladesäule 2", 90.0), ("Ladesäule 3", 100.0), ("Ziel", 130.0)],
     },
     "Kurzstrecke, dicht besäult": {
-        "start": "Depot (Stuttgart)",
-        "etappen": [("Lader Pforzheim", 40.0), ("Lader Karlsruhe", 35.0), ("Lader Baden-Baden", 30.0), ("Ziel (Freiburg)", 90.0)],
+        "start": "Depot",
+        "etappen": [("Ladesäule 1", 40.0), ("Ladesäule 2", 35.0), ("Ladesäule 3", 30.0), ("Ziel", 90.0)],
     },
     "Langstrecke, dünn besäult": {
-        "start": "Depot (Hamburg)",
-        "etappen": [("Lader Hannover", 150.0), ("Lader Kassel", 150.0), ("Lader Frankfurt", 150.0), ("Ziel (Stuttgart)", 150.0)],
+        "start": "Depot",
+        "etappen": [("Ladesäule 1", 150.0), ("Ladesäule 2", 150.0), ("Ladesäule 3", 150.0), ("Ziel", 150.0)],
     },
 }
 PRESET_NAMEN = tuple(PRESETS)

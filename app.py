@@ -60,24 +60,22 @@ st.title("🔋 Ladestrategie: E-Lieferfahrzeug im Winter")
 st.caption("Fall-Demo (Transport & Tourenplanung) von sebastianhanisch.net - echte Studienwerte, keine frei erfundene Physik.")
 
 st.markdown(
-    "Diese Demo gehört zur **Graphen-und-Netzwerke-Linie** der Konzepte-Reihe von "
-    "[sebastianhanisch.net](https://sebastianhanisch.net) - anders als die dortigen Verfahrens-Demos "
-    "(ein Algorithmus an einem wachsenden, meist künstlichen Beispiel) ist das hier eine "
-    "**Analyse-Karte**: eine Kennzahl an einem einzigen, aber echten Fall berechnen und interpretieren, "
-    "kein Verfahrensvergleich. Ein E-Lieferfahrzeug fährt eine feste Strecke mit **frei einstellbaren** "
-    "Schnellladesäulen-Positionen. Entschieden wird an jeder Säule nur: **wie viel laden, und wie lange "
-    "vorher heizen?** Kälte erhöht den Verbrauch beim Fahren UND senkt den Ladewirkungsgrad (kalte "
-    "Zellen haben mehr Innenwiderstand) - Heizen kostet selbst Energie, kann sich aber lohnen, wenn es "
-    "an der nächsten Säule genug Ladeverlust erspart. Gesucht ist die Strategie, die **insgesamt am "
-    "wenigsten Energie aus dem Netz zieht**, nicht die schnellste."
+    "Ein E-Lieferfahrzeug fährt eine Strecke mit **frei einstellbaren** Schnellladesäulen-Positionen. "
+    "Entschieden wird an jeder Säule nur: **wie viel laden, und wie lange vorher heizen?** Kälte erhöht "
+    "den Verbrauch beim Fahren UND senkt den Ladewirkungsgrad (kalte Zellen haben mehr Innenwiderstand) "
+    "- Heizen kostet selbst Energie, kann sich aber lohnen, wenn es an der nächsten Säule genug "
+    "Ladeverlust erspart. Gesucht ist die Strategie, die **insgesamt am wenigsten Energie aus dem Netz "
+    "zieht**, nicht die schnellste."
 )
+
+st.caption("🎯 Schnellstart – ein Beispielszenario laden:")
+preset_col1, preset_col2, preset_col3 = st.columns(3)
+for preset_col, name in zip((preset_col1, preset_col2, preset_col3), PRESET_NAMEN):
+    with preset_col:
+        st.button(name, on_click=anwenden_preset, args=(name,), width="stretch")
 
 with st.sidebar:
     st.header("Strecke")
-    st.caption("Beispiele")
-    for name in PRESET_NAMEN:
-        st.button(name, on_click=anwenden_preset, args=(name,), width="stretch")
-
     st.caption("Eigene Strecke")
     anzahl_saeulen = st.slider("Anzahl Ladesäulen", ANZAHL_SAEULEN_MIN, ANZAHL_SAEULEN_MAX, key="anzahl_saeulen_slider")
     etappen_namen = etappen_namen_fuer(anzahl_saeulen)
@@ -187,6 +185,82 @@ with st.expander("📐 Modellannahmen und Quellen"):
         """
     )
 
+with st.expander("📐 Mathematische Formulierung"):
+    st.markdown(
+        r"""
+**Gegeben:**
+
+- Haltepunkte $0,\dots,n$ ($0$ = Start, $1,\dots,n-1$ = Ladesäulen, $n$ = Ziel), Segmente
+  $j=1,\dots,n$ mit Distanz $d_j$ und einheitlicher Außentemperatur $T$
+- Fahrzeug: Kapazität $Q$, Basisverbrauch $b$ (kWh/km bei 20 °C), Geschwindigkeit $v$,
+  Heizleistung $P$, Segmentzeit $t_j = d_j / v$
+- Verbrauch je km (`verbrauch_kwh_km`): $c(T) = b \cdot \big(1 + \alpha \max(0,\,20-T)\big)$,
+  $\alpha$ AAA-kalibriert
+- Ladewirkungsgrad (`ladewirkungsgrad`): linear zwischen $\eta_{kalt}=0{,}80$ bei $-20\,°C$ und
+  $\eta_{warm}=0{,}95$ bei $\geq 20\,°C$
+- Batterietemperatur nach Heizdauer $h$ bei Leistung $P$ (`batterietemperatur_nach_heizen`),
+  geschlossene Lösung der Wärme-ODE $\tfrac{dT_{batt}}{dt} = r - k(T_{batt}-T)$:
+"""
+    )
+    st.latex(
+        r"T_{batt}(h) = T + \frac{r}{k}\big(1 - e^{-kh}\big), "
+        r"\qquad r = \frac{P \cdot \eta_{heiz}}{C}, \qquad k = \frac{1}{\tau}"
+    )
+    st.markdown(
+        r"""
+mit Heiz-Wirkungsgrad $\eta_{heiz}=0{,}9$, Wärmekapazität $C$ und thermischer Zeitkonstante
+$\tau = 9\,$h (Quellen siehe oben) - $T_{batt}(h)$ nähert sich für $h\to\infty$ der
+Gleichgewichtstemperatur $T + r/k$ an, statt unbegrenzt zu steigen.
+
+**Zustand:** Akkustand $s \in [0,Q]$, diskretisiert in $K+1$ gleich breite Stufen (`soc_aufloesung`,
+Standard $K=300$) - ein Schichten-DAG mit einer Schicht je Haltepunkt, exakt bis auf diese
+Diskretisierung.
+
+**Entscheidung an Ladesäule $j$:** Heizdauer $h_j \in [0,\bar h_j]$ mit
+$\bar h_j = \min\!\big(t_j,\; s_j^{ank}/P\big)$ (begrenzt durch Zeit UND verfügbare Akkuenergie),
+sowie die Abfahrt-SOC-Stufe $s_j^{ab} \geq s_j^{ank}-P h_j$.
+
+**Kostenfunktion an einem Stopp** (`kosten_bei_stopp` / `_kosten_batch`): die minimale aus dem Netz
+gezogene Energie, um von Ankunft $s^{ank}$ auf Abfahrt $s^{ab}$ zu kommen, optimal über $h$ gesucht:
+"""
+    )
+    st.latex(
+        r"\mathrm{kosten}(s^{ank}, s^{ab}, T, t, P) = \min_{h \,\in\, [0,\bar h]} "
+        r"\frac{\max\!\big(0,\; s^{ab} - (s^{ank} - Ph)\big)}{\eta\big(T_{batt}(h)\big)}"
+    )
+    st.markdown(
+        r"""
+Keine geschlossene Lösung für das optimale $h$: $\eta(T_{batt}(h))$ sättigt (Wärmeverlust), während
+die benötigte Lademenge $s^{ab}-(s^{ank}-Ph)$ mit $h$ linear sinkt und bei $Ph=s^{ab}-s^{ank}$ auf
+0 fällt - das Produkt ist nicht garantiert konvex in $h$, deshalb eine endliche Rastersuche
+(`heiz_aufloesung`, Standard 400 Schritte) statt einer Ableitung.
+
+**Bellman-Rekursion** (`plane_route`): $f_j(s)$ = minimale Netzenergie, um Haltepunkt $j$ mit
+Akkustand $s$ zu erreichen, $f_0(s_0^{start})=0$ sonst $\infty$:
+"""
+    )
+    st.latex(
+        r"f_j(s^{ab}) = \min_{s \,:\, s^{ank}(s) \,\leq\, s^{ab}} \; "
+        r"f_{j-1}(s) + \mathrm{kosten}\big(s^{ank}(s),\, s^{ab},\, T_j,\, t_j,\, P\big), "
+        r"\qquad s^{ank}(s) = s - c(T_j)\, d_j"
+    )
+    st.markdown(
+        r"""
+am Ziel ($j=n$) entfällt die Ladeentscheidung (`ist_ziel`-Fall): $f_n(s^{ank}(s)) = \min\big(f_n(s^{ank}(s)),\, f_{n-1}(s)\big)$,
+nur die Sicherheitsreserve muss erreicht werden. Gesucht ist die Gesamtlösung
+"""
+    )
+    st.latex(r"\mathrm{netzenergie\_gesamt} = \min_{s} f_n(s)")
+    st.markdown(
+        r"""
+**Modellzuordnung:** ressourcenbeschränkter kürzester Weg (resource-constrained shortest path) - der
+Akkustand ist die Ressource, der Haltepunkt-Index die Schicht. Rückverfolgung über `herkunft[j][b]`
+liefert den optimalen Pfad (Lade-/Heizentscheidung an jedem Stopp), analog zur Pfadrekonstruktion
+bei einer gewöhnlichen Kürzeste-Wege-DP. Komplexität: $O(n \cdot K^2 \cdot H)$ (Haltepunkte ×
+SOC-Stufen² × Heizauflösung) vor der numpy-Vektorisierung über $H$ in `_kosten_batch`.
+"""
+    )
+
 st.header("Zusammenhänge zu anderen Stücken des Portfolios")
 st.markdown(
     "- **[Fernverkehr: Lenkzeiten und Elektro-Lkw](https://sebastianhanisch-fernverkehr-demo.streamlit.app/)** "
@@ -195,10 +269,6 @@ st.markdown(
     "Temperatureffekt. Diese Demo hier ergänzt genau das Fehlende: **eine einzelne Strecke, "
     "energieminimal**, mit Temperaturphysik bei Verbrauch und Ladewirkungsgrad - kein Duplikat, sondern "
     "die thermische Tiefe, die dort bewusst außen vor blieb.\n"
-    "- **[Zentralität](https://sebastianhanisch-centrality-demo.streamlit.app/)** und "
-    "**[Strukturkennzahlen und Nullmodelle](https://sebastianhanisch-strukturkennzahlen-demo.streamlit.app/)** "
-    "sind die anderen Analyse-Karten der Graphen-und-Netzwerke-Linie - dieselbe Grundidee (eine "
-    "Kennzahl berechnen und interpretieren, kein Verfahrensvergleich), andere Kennzahlen.\n"
     "- Modell und Algorithmus (ressourcenbeschränkter kürzester Weg: Akkustand als Ressource, "
     "dynamische Programmierung über diskretisierte Zustände) folgen demselben Muster wie die "
     "**[Kürzeste-Wege-Linie](https://sebastianhanisch.net/konzepte-kuerzeste-wege.html)** der Konzepte-Reihe."
