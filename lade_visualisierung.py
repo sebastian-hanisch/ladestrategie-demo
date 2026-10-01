@@ -52,6 +52,6 @@ def temperatur_sweep_figur(sweep: list[dict]) -> go.Figure:
     fig.add_trace(go.Scatter(x=[z["temperatur"] for z in sweep], y=[z["mit_heizen"] for z in sweep], mode="lines+markers", name="mit Heizen", line=dict(color=FARBE_MIT_HEIZEN)))
     fig.update_layout(
         title="Netzenergie für die ganze Strecke, je nach Außentemperatur",
-        xaxis_title="Außentemperatur (°C)", yaxis_title="Netzenergie gesamt (kWh)", height=420, xaxis=dict(autorange="reversed"),
+        xaxis_title="Außentemperatur (°C)", yaxis_title="Netzenergie gesamt (kWh)", height=420,
     )
     return fig

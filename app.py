@@ -142,7 +142,7 @@ else:
 
 st.header("2. Effekt des Heizens über die Temperatur")
 st.markdown(
-    "Dieselbe Strecke, fest durchgerechnet für jede Temperatur von +20 °C bis -20 °C, einmal mit und "
+    "Dieselbe Strecke, fest durchgerechnet für jede Temperatur von -20 °C bis +20 °C, einmal mit und "
     "einmal ohne Heizoption - zeigt, ab wann sich Heizen überhaupt lohnt."
 )
 
@@ -150,7 +150,7 @@ st.markdown(
 @st.cache_data
 def _temperatur_sweep(namen: tuple[str, ...], distanzen: tuple[float, ...], kap: float, basis: float, start_soc: float, geschwindigkeit: float, heizleistung: float) -> list[dict]:
     zeilen = []
-    for t in range(20, -21, -2):
+    for t in range(-20, 21, 2):
         mit = _route_planen(namen, distanzen, float(t), kap, basis, start_soc, geschwindigkeit, heizleistung, True)
         ohne = _route_planen(namen, distanzen, float(t), kap, basis, start_soc, geschwindigkeit, heizleistung, False)
         if mit.erreichbar and ohne.erreichbar:
@@ -167,7 +167,7 @@ if sweep:
         st.caption(
             f"Bei -20 °C spart Heizen {ersparnis_bei_kaelte:.1f} kWh auf dieser Strecke "
             f"({ersparnis_bei_kaelte / next(z['ohne_heizen'] for z in sweep if z['temperatur'] == -20) * 100:.1f} % weniger Netzenergie), "
-            f"bei +10 °C nur noch {ersparnis_bei_mild:.1f} kWh - der Effekt wächst mit der Kälte, ist in milden Wintern aber gering."
+            f"bei +10 °C nur noch {ersparnis_bei_mild:.1f} kWh - der Effekt nimmt mit steigender Temperatur ab und ist in milden Wintern gering."
         )
 else:
     st.info("Für diese Strecke/dieses Fahrzeug ist nicht jede Temperatur im Bereich erreichbar - der Vergleich wird übersprungen.")
