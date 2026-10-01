@@ -19,15 +19,24 @@ Kalibrierung, mit echten Quellen (keine frei erfundenen Zahlen):
   Wirkungsgrad-Kurve oben und nicht in die Verbrauchsoptimierung einbezogen.
 - Vorkonditionierung: vorgewärmte Batterien laden nachweislich schneller und gewinnen einen Teil der
   kältebedingt verlorenen Reichweite zurück - der Mechanismus hinter der Heizen-Option unten.
+- Heizleistung: Batterie-Vorwärmung läuft bei realen Fahrzeugen typischerweise mit 3-8 kW (große
+  Pakete), z. B. Tesla Model 3 mit 6 kW - das ist die Standard-Heizleistung hier.
+- Wärmeverlust an die Umgebung: ein Erfahrungswert aus der Praxis (Nissan-LEAF-Forum, Auswertung
+  einer realen Abkühlkurve) beziffert die thermische Zeitkonstante eines Akkupakets auf rund 9
+  Stunden (passive, ungeregelte Abkühlung) - deutlich länger als eine einzelne Fahrstrecke, aber
+  nicht vernachlässigbar bei langem Heizen.
 
-Vereinfachung, die diese Demo bewusst trifft: die Batterie nimmt beim Fahren eines Abschnitts dessen
-Außentemperatur an (kein Wärmespeicher über mehrere Abschnitte); heizen lässt sich nur unmittelbar vor
-einem Ladestopp, aus dem eigenen Akkustand. Realistische Fahrzeuge isolieren den Akku und heizen nicht
-beliebig schnell - hier zählt nur die Energiebilanz, keine Heizleistungsgrenze.
+Heizen passiert WÄHREND der Fahrt des letzten Abschnitts vor einer Ladesäule, nicht "unmittelbar
+davor": begrenzt durch die Heizleistung (braucht Zeit, keine beliebig schnelle Erwärmung) UND durch
+Wärmeverlust an die kalte Außenluft während des Heizens (exponentielle Annäherung an eine
+Gleichgewichtstemperatur, kein linearer Anstieg). Vereinfachung, die bleibt: Heizen wirkt nur im
+unmittelbar vorangehenden Abschnitt (kein Wärmespeicher über mehrere Abschnitte hinweg) - die
+Batterie beginnt jeden Abschnitt bei dessen Außentemperatur.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 # ---------- Verbrauch ----------
@@ -58,15 +67,30 @@ def ladewirkungsgrad(batterietemperatur_c: float) -> float:
     return ETA_KALT + anteil * (ETA_WARM - ETA_KALT)
 
 
-# ---------- Batterieheizung ----------
+# ---------- Batterieheizung: Leistung, Zeit, Wärmeverlust ----------
 
 WAERMEKAPAZITAET_KWH_PRO_GRAD = 0.125  # ~450 kg Zellpaket, spez. Wärmekapazität ~1,0 kJ/(kg·K)
-HEIZ_WIRKUNGSGRAD = 0.9  # Anteil der aus dem Akku entnommenen Heizenergie, der die Zellen tatsächlich erwärmt
+HEIZ_WIRKUNGSGRAD = 0.9  # Anteil der Heizleistung, der die Zellen tatsächlich erwärmt (statt z. B. das Gehäuse)
+HEIZLEISTUNG_KW_STANDARD = 6.0  # Tesla Model 3 (3-8 kW typisch für große Pakete)
+WAERMEVERLUST_ZEITKONSTANTE_H = 9.0  # Erfahrungswert, passive Abkühlung (Nissan-LEAF-Fallstudie)
 
 
-def temperaturanstieg_durch_heizen(heiz_soc_kwh: float) -> float:
-    """Temperaturanstieg der Batterie (°C) bei Entnahme von `heiz_soc_kwh` aus dem Akku fürs Heizen."""
-    return heiz_soc_kwh * HEIZ_WIRKUNGSGRAD / WAERMEKAPAZITAET_KWH_PRO_GRAD
+def batterietemperatur_nach_heizen(aussentemperatur_c: float, heiz_dauer_h: float, heizleistung_kw: float = HEIZLEISTUNG_KW_STANDARD) -> float:
+    """Batterietemperatur nach `heiz_dauer_h` Stunden Heizen bei konstanter Leistung, ausgehend von der
+    Außentemperatur, mit gleichzeitigem Wärmeverlust an die Umgebung (exponentielle Annäherung an eine
+    Gleichgewichtstemperatur statt eines linearen Anstiegs - Newtonsches Abkühlungsgesetz rückwärts):
+
+        dT/dt = heizleistung_kw * HEIZ_WIRKUNGSGRAD / WAERMEKAPAZITAET_KWH_PRO_GRAD - k * (T - T_aussen)
+
+    mit k = 1 / WAERMEVERLUST_ZEITKONSTANTE_H. Geschlossene Lösung für T(0) = T_aussen:
+
+        T(t) = T_aussen + (heizrate / k) * (1 - exp(-k*t))
+    """
+    if heiz_dauer_h <= 0:
+        return aussentemperatur_c
+    heizrate_pro_h = heizleistung_kw * HEIZ_WIRKUNGSGRAD / WAERMEKAPAZITAET_KWH_PRO_GRAD
+    k = 1.0 / WAERMEVERLUST_ZEITKONSTANTE_H
+    return aussentemperatur_c + (heizrate_pro_h / k) * (1.0 - math.exp(-k * heiz_dauer_h))
 
 
 # ---------- Fahrzeug, Strecke ----------
@@ -78,6 +102,8 @@ class Fahrzeug:
     basisverbrauch_kwh_km: float  # bei Referenztemperatur 20 °C
     start_soc_kwh: float
     reserve_kwh: float = 0.0  # Sicherheitsreserve, die am Ziel mindestens übrig bleiben muss
+    geschwindigkeit_kmh: float = 80.0  # bestimmt, wie viel Zeit fürs Heizen während eines Abschnitts bleibt
+    heizleistung_kw: float = HEIZLEISTUNG_KW_STANDARD
 
 
 @dataclass(frozen=True)

@@ -1,58 +1,119 @@
 """Verbrauchsminimale Streckenplanung für ein E-Lieferfahrzeug - Streamlit-Demo.
 
 Fall-Demo (Transport & Tourenplanung) der Website sebastianhanisch.net: eine feste Strecke mit
-gegebenen Schnellladesäulen-Positionen, temperaturabhängigem Verbrauch und Ladewirkungsgrad, und der
-Entscheidung, wie viel an jeder Säule geladen und wie viel vorher geheizt wird - gesucht ist die
-Strategie, die insgesamt am wenigsten Netzenergie zieht.
+konfigurierbaren Schnellladesäulen-Positionen, temperaturabhängigem Verbrauch und Ladewirkungsgrad,
+und der Entscheidung, wie viel an jeder Säule geladen und wie lange während der Fahrt vorher geheizt
+wird - gesucht ist die Strategie, die insgesamt am wenigsten Netzenergie zieht.
 """
 
 from __future__ import annotations
 
-import plotly.graph_objects as go
 import streamlit as st
 
-from modell import ETA_KALT, ETA_WARM, Fahrzeug, Segment, Strecke, ladewirkungsgrad, verbrauch_kwh_km
-from planung import Ergebnis, plane_route
+from lade_constants import (
+    ANZAHL_SAEULEN_MAX,
+    ANZAHL_SAEULEN_MIN,
+    DISTANZ_MAX,
+    DISTANZ_MIN,
+    GESCHWINDIGKEIT_MAX,
+    GESCHWINDIGKEIT_MIN,
+    GESCHWINDIGKEIT_STANDARD,
+    HEIZLEISTUNG_MAX,
+    HEIZLEISTUNG_MIN,
+    HEIZLEISTUNG_STANDARD,
+    KAPAZITAET_MAX,
+    KAPAZITAET_MIN,
+    KAPAZITAET_STANDARD,
+    PRESET_NAMEN,
+    START_SOC_PROZENT_MAX,
+    START_SOC_PROZENT_MIN,
+    START_SOC_PROZENT_STANDARD,
+    TEMPERATUR_MAX,
+    TEMPERATUR_MIN,
+    TEMPERATUR_STANDARD,
+    VERBRAUCH_MAX,
+    VERBRAUCH_MIN,
+    VERBRAUCH_STANDARD,
+)
+from lade_modell import (
+    ETA_KALT,
+    ETA_WARM,
+    WAERMEVERLUST_ZEITKONSTANTE_H,
+    Fahrzeug,
+    ladewirkungsgrad,
+    verbrauch_kwh_km,
+)
+from lade_planung import Ergebnis, plane_route
+from lade_szenario import (
+    anwenden_preset,
+    baue_strecke,
+    etappen_namen_fuer,
+    init_session_state_defaults,
+)
+from lade_visualisierung import soc_verlauf_figur, temperatur_sweep_figur
 
 st.set_page_config(page_title="Ladestrategie: E-Lieferfahrzeug im Winter", page_icon="🔋", layout="wide")
 
-STANDARD_NAMEN = ["Depot (München)", "Schnelllader Ingolstadt", "Schnelllader Nürnberg", "Schnelllader Hof", "Ziel (Leipzig)"]
-STANDARD_DISTANZEN = [80.0, 90.0, 100.0, 130.0]
+init_session_state_defaults()
 
 st.title("🔋 Ladestrategie: E-Lieferfahrzeug im Winter")
 st.caption("Fall-Demo (Transport & Tourenplanung) von sebastianhanisch.net - echte Studienwerte, keine frei erfundene Physik.")
 
 st.markdown(
-    "Ein E-Lieferfahrzeug fährt eine feste Strecke mit **gegebenen** Schnellladesäulen-Positionen "
-    "(die Standorte sind keine Entscheidung - die gibt es, wo sie gebaut wurden). Entschieden wird an "
-    "jeder Säule nur: **wie viel laden, und wie viel vorher heizen?** Kälte erhöht den Verbrauch beim "
-    "Fahren UND senkt den Ladewirkungsgrad (kalte Zellen haben mehr Innenwiderstand) - Heizen kostet "
-    "selbst Energie, kann sich aber lohnen, wenn es an der nächsten Säule genug Ladeverlust erspart. "
-    "Gesucht ist die Strategie, die **insgesamt am wenigsten Energie aus dem Netz zieht**, nicht die "
-    "schnellste."
+    "Diese Demo gehört zur **Graphen-und-Netzwerke-Linie** der Konzepte-Reihe von "
+    "[sebastianhanisch.net](https://sebastianhanisch.net) - anders als die dortigen Verfahrens-Demos "
+    "(ein Algorithmus an einem wachsenden, meist künstlichen Beispiel) ist das hier eine "
+    "**Analyse-Karte**: eine Kennzahl an einem einzigen, aber echten Fall berechnen und interpretieren, "
+    "kein Verfahrensvergleich. Ein E-Lieferfahrzeug fährt eine feste Strecke mit **frei einstellbaren** "
+    "Schnellladesäulen-Positionen. Entschieden wird an jeder Säule nur: **wie viel laden, und wie lange "
+    "vorher heizen?** Kälte erhöht den Verbrauch beim Fahren UND senkt den Ladewirkungsgrad (kalte "
+    "Zellen haben mehr Innenwiderstand) - Heizen kostet selbst Energie, kann sich aber lohnen, wenn es "
+    "an der nächsten Säule genug Ladeverlust erspart. Gesucht ist die Strategie, die **insgesamt am "
+    "wenigsten Energie aus dem Netz zieht**, nicht die schnellste."
 )
 
 with st.sidebar:
-    st.header("Einstellungen")
-    temperatur = st.slider("Außentemperatur (°C)", -20, 20, -5, help="Gilt einheitlich für die ganze Strecke.")
-    kapazitaet = st.slider("Batteriekapazität (kWh)", 40, 120, 80, step=5)
-    basisverbrauch = st.slider("Basisverbrauch bei 20 °C (kWh/km)", 0.20, 0.50, 0.32, step=0.01)
-    start_soc_anteil = st.slider("Akkustand am Depot (%)", 50, 100, 100, step=5)
-    heizen_erlaubt = st.toggle("Heizen vor dem Laden erlauben", value=True)
+    st.header("Strecke")
+    st.caption("Beispiele")
+    for name in PRESET_NAMEN:
+        st.button(name, on_click=anwenden_preset, args=(name,), width="stretch")
 
-strecke = Strecke(namen=STANDARD_NAMEN, segmente=[Segment(d, float(temperatur)) for d in STANDARD_DISTANZEN])
-fahrzeug = Fahrzeug(kapazitaet_kwh=float(kapazitaet), basisverbrauch_kwh_km=float(basisverbrauch), start_soc_kwh=kapazitaet * start_soc_anteil / 100)
+    st.caption("Eigene Strecke")
+    anzahl_saeulen = st.slider("Anzahl Ladesäulen", ANZAHL_SAEULEN_MIN, ANZAHL_SAEULEN_MAX, key="anzahl_saeulen_slider")
+    etappen_namen = etappen_namen_fuer(anzahl_saeulen)
+    start_name = st.text_input("Start", key="start_name")
+    distanzen = [st.number_input(f"Strecke zu {name} (km)", DISTANZ_MIN, DISTANZ_MAX, key=f"distanz_{i}", step=5.0) for i, name in enumerate(etappen_namen)]
+
+    st.header("Fahrzeug & Wetter")
+    temperatur = st.slider("Außentemperatur (°C)", TEMPERATUR_MIN, TEMPERATUR_MAX, TEMPERATUR_STANDARD, key="temperatur_slider", help="Gilt einheitlich für die ganze Strecke.")
+    kapazitaet = st.slider("Batteriekapazität (kWh)", KAPAZITAET_MIN, KAPAZITAET_MAX, KAPAZITAET_STANDARD, step=5, key="kapazitaet_slider")
+    basisverbrauch = st.slider("Basisverbrauch bei 20 °C (kWh/km)", VERBRAUCH_MIN, VERBRAUCH_MAX, VERBRAUCH_STANDARD, step=0.01, key="verbrauch_slider")
+    start_soc_anteil = st.slider("Akkustand am Start (%)", START_SOC_PROZENT_MIN, START_SOC_PROZENT_MAX, START_SOC_PROZENT_STANDARD, step=5, key="start_soc_slider")
+    geschwindigkeit = st.slider("Geschwindigkeit (km/h)", GESCHWINDIGKEIT_MIN, GESCHWINDIGKEIT_MAX, GESCHWINDIGKEIT_STANDARD, key="geschwindigkeit_slider", help="Bestimmt, wie viel Zeit während eines Abschnitts fürs Heizen bleibt.")
+    heizleistung = st.slider("Heizleistung (kW)", HEIZLEISTUNG_MIN, HEIZLEISTUNG_MAX, HEIZLEISTUNG_STANDARD, step=0.5, key="heizleistung_slider", help="Typisch 3-8 kW für große Batteriepakete (z. B. Tesla Model 3: 6 kW).")
+    heizen_erlaubt = st.toggle("Heizen während der Fahrt erlauben", value=True, key="heizen_toggle")
+
+alle_namen = tuple([start_name] + etappen_namen)
+alle_distanzen = tuple(float(d) for d in distanzen)
+strecke = baue_strecke(start_name, list(zip(etappen_namen, distanzen)), float(temperatur))
+fahrzeug = Fahrzeug(
+    kapazitaet_kwh=float(kapazitaet),
+    basisverbrauch_kwh_km=float(basisverbrauch),
+    start_soc_kwh=kapazitaet * start_soc_anteil / 100,
+    geschwindigkeit_kmh=float(geschwindigkeit),
+    heizleistung_kw=float(heizleistung),
+)
 
 
 @st.cache_data
-def _route_planen(namen: tuple[str, ...], distanzen: tuple[float, ...], temp: float, kap: float, basis: float, start_soc: float, heizen: bool) -> Ergebnis:
-    s = Strecke(namen=list(namen), segmente=[Segment(d, temp) for d in distanzen])
-    f = Fahrzeug(kapazitaet_kwh=kap, basisverbrauch_kwh_km=basis, start_soc_kwh=start_soc)
+def _route_planen(namen: tuple[str, ...], distanzen: tuple[float, ...], temp: float, kap: float, basis: float, start_soc: float, geschwindigkeit: float, heizleistung: float, heizen: bool) -> Ergebnis:
+    s = baue_strecke(namen[0], list(zip(namen[1:], distanzen)), temp)
+    f = Fahrzeug(kapazitaet_kwh=kap, basisverbrauch_kwh_km=basis, start_soc_kwh=start_soc, geschwindigkeit_kmh=geschwindigkeit, heizleistung_kw=heizleistung)
     return plane_route(s, f, heizen_erlaubt=heizen)
 
 
-ergebnis = _route_planen(tuple(STANDARD_NAMEN), tuple(STANDARD_DISTANZEN), float(temperatur), float(kapazitaet), float(basisverbrauch), fahrzeug.start_soc_kwh, heizen_erlaubt)
-ergebnis_ohne_heizen = _route_planen(tuple(STANDARD_NAMEN), tuple(STANDARD_DISTANZEN), float(temperatur), float(kapazitaet), float(basisverbrauch), fahrzeug.start_soc_kwh, False)
+ergebnis = _route_planen(alle_namen, alle_distanzen, float(temperatur), float(kapazitaet), float(basisverbrauch), fahrzeug.start_soc_kwh, float(geschwindigkeit), float(heizleistung), heizen_erlaubt)
+ergebnis_ohne_heizen = _route_planen(alle_namen, alle_distanzen, float(temperatur), float(kapazitaet), float(basisverbrauch), fahrzeug.start_soc_kwh, float(geschwindigkeit), float(heizleistung), False)
 
 st.header("1. Ergebnis bei dieser Einstellung")
 
@@ -65,36 +126,19 @@ else:
     col2.metric("davon durch Heizen gespart", f"{ersparnis:.1f} kWh", delta=f"{-ersparnis:.1f} kWh" if ersparnis > 0 else None, delta_color="inverse")
     col3.metric("Verbrauch je km bei dieser Temperatur", f"{verbrauch_kwh_km(basisverbrauch, temperatur):.3f} kWh/km")
 
-    # SOC-Verlauf über die Strecke
-    x = [0.0]
-    y = [fahrzeug.start_soc_kwh]
-    kumulierte_distanz = 0.0
-    for i, stopp in enumerate(ergebnis.stopps):
-        kumulierte_distanz += strecke.segmente[i].distanz_km
-        x += [kumulierte_distanz, kumulierte_distanz, kumulierte_distanz]
-        y += [stopp.ankunft_soc_kwh, stopp.ankunft_soc_kwh - stopp.heiz_soc_kwh, stopp.abfahrt_soc_kwh]
-    kumulierte_distanz += strecke.segmente[-1].distanz_km
-    x.append(kumulierte_distanz)
-    y.append(ergebnis.ankunft_ziel_soc_kwh)
-
-    fig_soc = go.Figure()
-    fig_soc.add_trace(go.Scatter(x=x, y=y, mode="lines", line=dict(color="#3E8E86", width=3), name="Akkustand"))
-    fig_soc.add_hline(y=0, line_dash="dot", line_color="#D68A2E")
-    kumuliert = 0.0
-    for i, name in enumerate(strecke.namen):
-        fig_soc.add_vline(x=kumuliert, line_dash="dot", line_color="#8A96A6")
-        fig_soc.add_annotation(x=kumuliert, y=fahrzeug.kapazitaet_kwh, text=name, showarrow=False, textangle=-40, font=dict(size=10), xanchor="left")
-        if i < len(strecke.segmente):
-            kumuliert += strecke.segmente[i].distanz_km
-    fig_soc.update_layout(title="Akkustand über die Strecke (Einbruch vor einem Ladestopp = Heizen)", xaxis_title="Strecke (km)", yaxis_title="Akkustand (kWh)", height=420, margin=dict(t=60, b=10))
-    st.plotly_chart(fig_soc, width="stretch")
+    st.plotly_chart(soc_verlauf_figur(strecke, fahrzeug, ergebnis), width="stretch")
 
     if ergebnis.stopps:
         st.subheader("Entscheidungen an jeder Säule")
         for stopp in ergebnis.stopps:
+            heiz_text = (
+                f", davon {stopp.heiz_dauer_h * 60:.0f} min geheizt ({stopp.heiz_energie_kwh:.2f} kWh) auf {stopp.batterietemperatur_beim_laden_c:.1f} °C Batterietemperatur"
+                if stopp.heiz_dauer_h > 0.001
+                else f" (Batterie bleibt bei {temperatur:.0f} °C, kein Heizen)"
+            )
             st.markdown(
                 f"**{stopp.name}**: Ankunft {stopp.ankunft_soc_kwh:.2f} kWh"
-                + (f", davon {stopp.heiz_soc_kwh:.2f} kWh fürs Heizen auf {stopp.batterietemperatur_beim_laden_c:.1f} °C Batterietemperatur" if stopp.heiz_soc_kwh > 0.01 else f" (Batterie bleibt bei {temperatur:.0f} °C, kein Heizen)")
+                + heiz_text
                 + f" → geladen {stopp.geladen_kwh:.2f} kWh ({stopp.netzenergie_kwh:.2f} kWh aus dem Netz, Wirkungsgrad {ladewirkungsgrad(stopp.batterietemperatur_beim_laden_c) * 100:.0f} %) → Abfahrt {stopp.abfahrt_soc_kwh:.2f} kWh"
             )
 
@@ -106,23 +150,19 @@ st.markdown(
 
 
 @st.cache_data
-def _temperatur_sweep(namen: tuple[str, ...], distanzen: tuple[float, ...], kap: float, basis: float, start_soc: float) -> list[dict]:
+def _temperatur_sweep(namen: tuple[str, ...], distanzen: tuple[float, ...], kap: float, basis: float, start_soc: float, geschwindigkeit: float, heizleistung: float) -> list[dict]:
     zeilen = []
     for t in range(20, -21, -2):
-        mit = _route_planen(namen, distanzen, float(t), kap, basis, start_soc, True)
-        ohne = _route_planen(namen, distanzen, float(t), kap, basis, start_soc, False)
+        mit = _route_planen(namen, distanzen, float(t), kap, basis, start_soc, geschwindigkeit, heizleistung, True)
+        ohne = _route_planen(namen, distanzen, float(t), kap, basis, start_soc, geschwindigkeit, heizleistung, False)
         if mit.erreichbar and ohne.erreichbar:
             zeilen.append({"temperatur": t, "mit_heizen": mit.netzenergie_gesamt_kwh, "ohne_heizen": ohne.netzenergie_gesamt_kwh})
     return zeilen
 
 
-sweep = _temperatur_sweep(tuple(STANDARD_NAMEN), tuple(STANDARD_DISTANZEN), float(kapazitaet), float(basisverbrauch), fahrzeug.start_soc_kwh)
+sweep = _temperatur_sweep(alle_namen, alle_distanzen, float(kapazitaet), float(basisverbrauch), fahrzeug.start_soc_kwh, float(geschwindigkeit), float(heizleistung))
 if sweep:
-    fig_sweep = go.Figure()
-    fig_sweep.add_trace(go.Scatter(x=[z["temperatur"] for z in sweep], y=[z["ohne_heizen"] for z in sweep], mode="lines+markers", name="ohne Heizen", line=dict(color="#8A96A6")))
-    fig_sweep.add_trace(go.Scatter(x=[z["temperatur"] for z in sweep], y=[z["mit_heizen"] for z in sweep], mode="lines+markers", name="mit Heizen", line=dict(color="#3E8E86")))
-    fig_sweep.update_layout(title="Netzenergie für die ganze Strecke, je nach Außentemperatur", xaxis_title="Außentemperatur (°C)", yaxis_title="Netzenergie gesamt (kWh)", height=420, xaxis=dict(autorange="reversed"))
-    st.plotly_chart(fig_sweep, width="stretch")
+    st.plotly_chart(temperatur_sweep_figur(sweep), width="stretch")
     ersparnis_bei_kaelte = next((z["ohne_heizen"] - z["mit_heizen"] for z in sweep if z["temperatur"] == -20), None)
     ersparnis_bei_mild = next((z["ohne_heizen"] - z["mit_heizen"] for z in sweep if z["temperatur"] == 10), None)
     if ersparnis_bei_kaelte is not None and ersparnis_bei_mild is not None:
@@ -131,6 +171,8 @@ if sweep:
             f"({ersparnis_bei_kaelte / next(z['ohne_heizen'] for z in sweep if z['temperatur'] == -20) * 100:.1f} % weniger Netzenergie), "
             f"bei +10 °C nur noch {ersparnis_bei_mild:.1f} kWh - der Effekt wächst mit der Kälte, ist in milden Wintern aber gering."
         )
+else:
+    st.info("Für diese Strecke/dieses Fahrzeug ist nicht jede Temperatur im Bereich erreichbar - der Vergleich wird übersprungen.")
 
 with st.expander("📐 Modellannahmen und Quellen"):
     st.markdown(
@@ -138,9 +180,10 @@ with st.expander("📐 Modellannahmen und Quellen"):
 - **Verbrauch bei Kälte**: AAA-Wintertest 2025 (Chevrolet Equinox EV, Tesla Model Y, Ford Mustang Mach-E) - bei -6,6 °C im Schnitt 35,6 % geringere Effizienz. Referenztemperatur 20 °C, linear zunehmender Mehrverbrauch darunter, kein Effekt oberhalb.
 - **Ladewirkungsgrad bei Kälte**: Innenwiderstand von Li-Ion-Zellen bei -20 °C nachweislich etwa 3-mal so hoch wie bei Raumtemperatur (mehrere Studien zu Zellen bei tiefen Temperaturen) - mehr Widerstand heißt mehr ohmscher Verlust je geladener kWh. Kalibriert auf {ETA_WARM * 100:.0f} % bei ≥20 °C und {ETA_KALT * 100:.0f} % bei -20 °C, linear dazwischen - die Literatur belegt Richtung und Größenordnung, nicht exakt diese Kurve.
 - **Ladeleistung/-zeit bei Kälte** (hier nicht Teil der Optimierung): Idaho National Laboratory, empirische Studie an Nissan-LEAF-Taxis (~500 Schnellladevorgänge) - bei 0 °C nach gleicher Ladezeit 36 % weniger Ladestand als bei 25 °C, Schnellladen bis zu 3-mal langsamer. Das ist überwiegend ein Leistungseffekt (die Ladesteuerung drosselt den Strom zum Zellschutz), kein reiner Energie-Effizienz-Effekt - deshalb bewusst getrennt von der Wirkungsgrad-Kurve oben.
-- **Vereinfachung**: die Batterie nimmt beim Fahren eines Abschnitts dessen Außentemperatur an (kein Wärmespeicher über mehrere Abschnitte); heizen lässt sich nur unmittelbar vor einem Stopp, aus dem eigenen Akkustand, ohne Leistungsgrenze (nur die Energiebilanz zählt).
-- **Strecke und Fahrzeug**: Positionen und Distanzen der Ladesäulen sind fest vorgegeben (keine Streckenwahl) - nur Lademenge und Heizdauer an jeder Säule sind die Entscheidung. Werte für Kapazität und Verbrauch orientieren sich an einem typischen E-Lieferfahrzeug (z. B. Mercedes eSprinter, VW ID. Buzz Cargo), frei einstellbar in der Seitenleiste.
-- **Algorithmus**: dynamische Programmierung über (Haltepunkt, Akkustand), diskretisiert in {300} Stufen, mit einer feinen Rastersuche über die Heizmenge an jedem Stopp (siehe `planung.py`). Gegen eine deutlich feinere Auflösung geprüft (`tests/test_planung.py`): Abweichung unter 3 %.
+- **Heizen während der Fahrt**: begrenzt durch die Heizleistung (3-8 kW typisch für große Batteriepakete, z. B. Tesla Model 3 mit 6 kW - Standardwert hier) UND durch Wärmeverlust an die kalte Außenluft während des Heizens (exponentielle Annäherung an eine Gleichgewichtstemperatur, keine beliebig schnelle Erwärmung). Die thermische Zeitkonstante ({WAERMEVERLUST_ZEITKONSTANTE_H:.0f} Stunden) ist ein Erfahrungswert aus einer realen Abkühlkurve (Nissan-LEAF-Fallstudie), kein Laborwert - deutlich länger als eine einzelne Fahrstrecke, aber nicht vernachlässigbar bei langem Heizen.
+- **Vereinfachung**: die Batterie nimmt beim Fahren eines Abschnitts dessen Außentemperatur an (kein Wärmespeicher über mehrere Abschnitte hinweg) - Heizen wirkt nur im unmittelbar vorangehenden Abschnitt.
+- **Strecke und Fahrzeug**: Anzahl und Distanzen der Ladesäulen sind frei einstellbar (links), aber während der Optimierung fest - keine Streckenwahl, nur Lademenge und Heizdauer an jeder Säule sind die Entscheidung. Werte für Kapazität und Verbrauch orientieren sich an einem typischen E-Lieferfahrzeug (z. B. Mercedes eSprinter, VW ID. Buzz Cargo).
+- **Algorithmus**: dynamische Programmierung über (Haltepunkt, Akkustand), mit einer feinen Rastersuche über die Heizdauer an jedem Stopp (siehe `lade_planung.py`). Gegen eine deutlich feinere Auflösung geprüft (`tests/test_lade_planung.py`): Abweichung unter 3 %.
         """
     )
 
@@ -152,6 +195,10 @@ st.markdown(
     "Temperatureffekt. Diese Demo hier ergänzt genau das Fehlende: **eine einzelne Strecke, "
     "energieminimal**, mit Temperaturphysik bei Verbrauch und Ladewirkungsgrad - kein Duplikat, sondern "
     "die thermische Tiefe, die dort bewusst außen vor blieb.\n"
+    "- **[Zentralität](https://sebastianhanisch-centrality-demo.streamlit.app/)** und "
+    "**[Strukturkennzahlen und Nullmodelle](https://sebastianhanisch-strukturkennzahlen-demo.streamlit.app/)** "
+    "sind die anderen Analyse-Karten der Graphen-und-Netzwerke-Linie - dieselbe Grundidee (eine "
+    "Kennzahl berechnen und interpretieren, kein Verfahrensvergleich), andere Kennzahlen.\n"
     "- Modell und Algorithmus (ressourcenbeschränkter kürzester Weg: Akkustand als Ressource, "
     "dynamische Programmierung über diskretisierte Zustände) folgen demselben Muster wie die "
     "**[Kürzeste-Wege-Linie](https://sebastianhanisch.net/konzepte-kuerzeste-wege.html)** der Konzepte-Reihe."

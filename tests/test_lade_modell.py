@@ -3,14 +3,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from modell import (
+from lade_modell import (
     ETA_KALT,
     ETA_WARM,
+    WAERMEVERLUST_ZEITKONSTANTE_H,
     Fahrzeug,
     Segment,
     Strecke,
+    batterietemperatur_nach_heizen,
     ladewirkungsgrad,
-    temperaturanstieg_durch_heizen,
     verbrauch_kwh_km,
 )
 
@@ -49,9 +50,32 @@ def test_ladewirkungsgrad_an_den_eckwerten():
     assert ladewirkungsgrad(-30.0) == ETA_KALT, "unterhalb des kalten Eckwerts wird geklemmt"
 
 
-def test_heizen_erhoeht_temperatur_und_ist_monoton():
-    assert temperaturanstieg_durch_heizen(0.0) == 0.0
-    assert temperaturanstieg_durch_heizen(1.0) > temperaturanstieg_durch_heizen(0.5) > 0.0
+def test_heizen_ohne_dauer_aendert_die_temperatur_nicht():
+    assert batterietemperatur_nach_heizen(-10.0, 0.0, heizleistung_kw=6.0) == -10.0
+
+
+def test_heizen_erhoeht_temperatur_und_ist_monoton_in_der_dauer():
+    t_kurz = batterietemperatur_nach_heizen(-10.0, 0.1, heizleistung_kw=6.0)
+    t_mittel = batterietemperatur_nach_heizen(-10.0, 0.5, heizleistung_kw=6.0)
+    t_lang = batterietemperatur_nach_heizen(-10.0, 2.0, heizleistung_kw=6.0)
+    assert -10.0 < t_kurz < t_mittel < t_lang
+
+
+def test_heizen_naehert_sich_einer_gleichgewichtstemperatur_an_statt_unbegrenzt_zu_steigen():
+    """Wärmeverlust an die Umgebung bremst den Anstieg - die Temperatur überschreitet nie
+    Außentemperatur + Heizrate/Verlustkonstante, auch nicht bei sehr langer Heizdauer."""
+    heizrate_pro_h = 6.0 * 0.9 / 0.125
+    grenze = -10.0 + heizrate_pro_h * WAERMEVERLUST_ZEITKONSTANTE_H
+    t_sehr_lang = batterietemperatur_nach_heizen(-10.0, 100.0, heizleistung_kw=6.0)
+    assert t_sehr_lang < grenze
+    assert t_sehr_lang > grenze - 1.0, "sollte sich der Grenze nach so langer Zeit praktisch annaehern"
+
+
+def test_mehr_heizleistung_erreicht_dieselbe_temperatur_schneller():
+    dauer = 0.3
+    t_schwach = batterietemperatur_nach_heizen(-10.0, dauer, heizleistung_kw=3.0)
+    t_stark = batterietemperatur_nach_heizen(-10.0, dauer, heizleistung_kw=8.0)
+    assert t_stark > t_schwach
 
 
 def test_strecke_prueft_laenge_von_namen_und_segmenten():

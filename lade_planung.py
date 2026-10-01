@@ -2,28 +2,30 @@
 (Haltepunkt, Akkustand), mit einer lokalen Optimierung über die Heizdauer an jedem Ladestopp.
 
 Die Route ist fest (keine Streckenwahl) - entschieden wird an jedem der festen Ladesäulen nur, wie viel
-geladen und wie viel vorher geheizt wird. Das ist ein ressourcenbeschränktes Kürzeste-Wege-Problem: der
-Akkustand ist die Ressource, in SOC-Stufen diskretisiert (Schichten-DAG, exakt bis auf die
-Diskretisierung - siehe tests/test_planung.py für die Konvergenzprüfung gegen eine feinere Auflösung).
+geladen und wie lange vorher (während der Fahrt des letzten Abschnitts, nicht erst am Stopp selbst)
+geheizt wird. Das ist ein ressourcenbeschränktes Kürzeste-Wege-Problem: der Akkustand ist die Ressource,
+in SOC-Stufen diskretisiert (Schichten-DAG, exakt bis auf die Diskretisierung - siehe
+tests/test_lade_planung.py für die Konvergenzprüfung gegen eine feinere Auflösung).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
-from modell import (
+from lade_modell import (
     ETA_KALT,
     ETA_WARM,
     HEIZ_WIRKUNGSGRAD,
     T_ETA_KALT_C,
     T_ETA_WARM_C,
     WAERMEKAPAZITAET_KWH_PRO_GRAD,
+    WAERMEVERLUST_ZEITKONSTANTE_H,
     Fahrzeug,
     Strecke,
+    batterietemperatur_nach_heizen,
     ladewirkungsgrad,
-    temperaturanstieg_durch_heizen,
     verbrauch_kwh_km,
 )
 
@@ -36,7 +38,8 @@ class Stopp:
 
     name: str
     ankunft_soc_kwh: float
-    heiz_soc_kwh: float
+    heiz_dauer_h: float
+    heiz_energie_kwh: float
     batterietemperatur_beim_laden_c: float
     geladen_kwh: float
     netzenergie_kwh: float
@@ -57,32 +60,36 @@ def kosten_bei_stopp(
     ankunft_soc_kwh: float,
     abfahrt_soc_kwh: float,
     aussentemperatur_c: float,
+    segment_zeit_h: float,
+    heizleistung_kw: float,
     heizen_erlaubt: bool,
-    heiz_aufloesung: int = 60,
+    heiz_aufloesung: int = 400,
 ) -> tuple[float, float] | None:
     """Minimale aus dem Netz gezogene Energie, um von `ankunft_soc_kwh` auf `abfahrt_soc_kwh` zu
-    kommen, optimal über die Heizmenge vor dem Stopp gesucht (feine, aber endliche Rastersuche - die
-    Zielfunktion ist nicht garantiert konvex, ein Raster ist hier robuster als eine Ableitung).
-    Gibt (netzenergie_kwh, beste_heiz_soc_kwh) zurück, oder None, wenn nicht erreichbar."""
+    kommen, optimal über die Heizdauer während der letzten `segment_zeit_h` Stunden vor dem Stopp
+    gesucht (feine, aber endliche Rastersuche - die Zielfunktion ist nicht garantiert konvex, ein
+    Raster ist hier robuster als eine Ableitung). Die Heizdauer ist begrenzt durch die verfügbare Zeit
+    (segment_zeit_h) UND durch die verfügbare Akkuenergie (heizleistung_kw * Dauer ≤ ankunft_soc_kwh).
+    Gibt (netzenergie_kwh, beste_heiz_dauer_h) zurück, oder None, wenn nicht erreichbar."""
     bedarf_kwh = abfahrt_soc_kwh - ankunft_soc_kwh
     if bedarf_kwh <= 1e-9:
         return 0.0, 0.0
-    max_heiz_soc = ankunft_soc_kwh if heizen_erlaubt else 0.0
+    max_dauer_h = min(segment_zeit_h, ankunft_soc_kwh / heizleistung_kw) if heizen_erlaubt and heizleistung_kw > 0 else 0.0
     bester: tuple[float, float] | None = None
-    schritte = heiz_aufloesung if max_heiz_soc > 0 else 0
+    schritte = heiz_aufloesung if max_dauer_h > 0 else 0
     for i in range(schritte + 1):
-        heiz_soc = max_heiz_soc * i / schritte if schritte else 0.0
-        delta_t = temperaturanstieg_durch_heizen(heiz_soc)
-        batterietemp = aussentemperatur_c + delta_t
+        heiz_dauer_h = max_dauer_h * i / schritte if schritte else 0.0
+        batterietemp = batterietemperatur_nach_heizen(aussentemperatur_c, heiz_dauer_h, heizleistung_kw)
         eta = ladewirkungsgrad(batterietemp)
-        soc_nach_heizen = ankunft_soc_kwh - heiz_soc
+        heiz_energie = heizleistung_kw * heiz_dauer_h
+        soc_nach_heizen = ankunft_soc_kwh - heiz_energie
         geladen = abfahrt_soc_kwh - soc_nach_heizen
         if geladen < -1e-9:
             continue
         geladen = max(0.0, geladen)
         netzenergie = geladen / eta
         if bester is None or netzenergie < bester[0]:
-            bester = (netzenergie, heiz_soc)
+            bester = (netzenergie, heiz_dauer_h)
     return bester
 
 
@@ -90,24 +97,29 @@ def _kosten_batch(
     ankunft_soc_kwh: float,
     abfahrt_kandidaten_kwh: "np.ndarray",
     aussentemperatur_c: float,
+    segment_zeit_h: float,
+    heizleistung_kw: float,
     heizen_erlaubt: bool,
-    heiz_aufloesung: int = 60,
+    heiz_aufloesung: int = 400,
 ) -> tuple["np.ndarray", "np.ndarray"]:
     """Wie `kosten_bei_stopp`, aber für alle `abfahrt_kandidaten_kwh` auf einmal (numpy) - dieselbe
-    Suche über die Heizmenge, nur als Matrix statt als Python-Doppelschleife. Rein eine
+    Suche über die Heizdauer, nur als Matrix statt als Python-Doppelschleife. Rein eine
     Performance-Variante (der DP-Zustandsraum macht sonst eine Python-Schleife je Sekunde langsam);
     `test_kosten_batch_stimmt_mit_der_einzelnen_suche_ueberein` prüft, dass beide dasselbe liefern."""
-    max_heiz_soc = ankunft_soc_kwh if heizen_erlaubt else 0.0
-    schritte = heiz_aufloesung if max_heiz_soc > 0 else 0
-    heiz_kandidaten = np.linspace(0.0, max_heiz_soc, schritte + 1)  # (H,)
+    max_dauer_h = min(segment_zeit_h, ankunft_soc_kwh / heizleistung_kw) if heizen_erlaubt and heizleistung_kw > 0 else 0.0
+    schritte = heiz_aufloesung if max_dauer_h > 0 else 0
+    heiz_kandidaten_h = np.linspace(0.0, max_dauer_h, schritte + 1)  # (H,)
 
-    delta_t = heiz_kandidaten * HEIZ_WIRKUNGSGRAD / WAERMEKAPAZITAET_KWH_PRO_GRAD
-    batterietemp = aussentemperatur_c + delta_t
+    # batterietemperatur_nach_heizen() vektorisiert (identische Formel, siehe lade_modell.py):
+    heizrate_pro_h = heizleistung_kw * HEIZ_WIRKUNGSGRAD / WAERMEKAPAZITAET_KWH_PRO_GRAD
+    k = 1.0 / WAERMEVERLUST_ZEITKONSTANTE_H
+    batterietemp = aussentemperatur_c + (heizrate_pro_h / k) * (1.0 - np.exp(-k * heiz_kandidaten_h))
     t_geklemmt = np.clip(batterietemp, T_ETA_KALT_C, T_ETA_WARM_C)
     anteil = (t_geklemmt - T_ETA_KALT_C) / (T_ETA_WARM_C - T_ETA_KALT_C)
     eta = ETA_KALT + anteil * (ETA_WARM - ETA_KALT)  # (H,)
 
-    soc_nach_heizen = ankunft_soc_kwh - heiz_kandidaten  # (H,)
+    heiz_energie = heizleistung_kw * heiz_kandidaten_h  # (H,)
+    soc_nach_heizen = ankunft_soc_kwh - heiz_energie  # (H,)
     geladen = abfahrt_kandidaten_kwh[None, :] - soc_nach_heizen[:, None]  # (H, K)
     unerreichbar = geladen < -1e-9
     geladen = np.clip(geladen, 0.0, None)
@@ -116,12 +128,12 @@ def _kosten_batch(
 
     beste_idx = np.argmin(netzenergie, axis=0)  # (K,)
     beste_kosten = netzenergie[beste_idx, np.arange(netzenergie.shape[1])]
-    beste_heiz = heiz_kandidaten[beste_idx]
+    beste_dauer = heiz_kandidaten_h[beste_idx]
 
     kein_bedarf = abfahrt_kandidaten_kwh - ankunft_soc_kwh <= 1e-9
     beste_kosten = np.where(kein_bedarf, 0.0, beste_kosten)
-    beste_heiz = np.where(kein_bedarf, 0.0, beste_heiz)
-    return beste_kosten, beste_heiz
+    beste_dauer = np.where(kein_bedarf, 0.0, beste_dauer)
+    return beste_kosten, beste_dauer
 
 
 def plane_route(
@@ -139,7 +151,7 @@ def plane_route(
     def _bucket_index(soc: float) -> int:
         return max(0, min(soc_aufloesung, round(soc / bucket_kwh)))
 
-    # dp[stopp][bucket] = (minimale Netzenergie bisher, vorgaenger_bucket, Stopp-Info)
+    # dp[stopp][bucket] = minimale Netzenergie bisher
     dp: list[list[float]] = [[UNERREICHBAR] * (soc_aufloesung + 1) for _ in range(n)]
     herkunft: list[list[int | None]] = [[None] * (soc_aufloesung + 1) for _ in range(n)]
     stopp_info: list[list[Stopp | None]] = [[None] * (soc_aufloesung + 1) for _ in range(n)]
@@ -150,6 +162,7 @@ def plane_route(
 
     for i in range(len(strecke.segmente)):
         segment = strecke.segmente[i]
+        segment_zeit_h = segment.distanz_km / fahrzeug.geschwindigkeit_kmh
         ist_ziel = i + 1 == n - 1
         for b in range(soc_aufloesung + 1):
             if dp[i][b] == UNERREICHBAR:
@@ -174,23 +187,27 @@ def plane_route(
             # Ladestopp: ueber alle erreichbaren Abfahrt-Buckets >= Ankunft suchen (vektorisiert -
             # eine Python-Schleife je Ankunfts-Bucket statt je (Ankunft, Abfahrt)-Paar).
             abfahrt_kandidaten = buckets_arr[ziel_bucket_ankunft:]
-            kosten_arr, heiz_arr = _kosten_batch(ankunft_naechster, abfahrt_kandidaten, segment.temperatur_c, heizen_erlaubt)
+            kosten_arr, heiz_dauer_arr = _kosten_batch(
+                ankunft_naechster, abfahrt_kandidaten, segment.temperatur_c, segment_zeit_h, fahrzeug.heizleistung_kw, heizen_erlaubt
+            )
             for k, ab_bucket in enumerate(range(ziel_bucket_ankunft, soc_aufloesung + 1)):
                 netzenergie = float(kosten_arr[k])
                 if not (netzenergie < UNERREICHBAR):
                     continue
-                heiz_soc = float(heiz_arr[k])
+                heiz_dauer_h = float(heiz_dauer_arr[k])
                 gesamt = dp[i][b] + netzenergie
                 if gesamt < dp[i + 1][ab_bucket] - 1e-12:
                     dp[i + 1][ab_bucket] = gesamt
                     herkunft[i + 1][ab_bucket] = b
-                    batterietemp = segment.temperatur_c + temperaturanstieg_durch_heizen(heiz_soc)
+                    heiz_energie = fahrzeug.heizleistung_kw * heiz_dauer_h
+                    batterietemp = batterietemperatur_nach_heizen(segment.temperatur_c, heiz_dauer_h, fahrzeug.heizleistung_kw)
                     stopp_info[i + 1][ab_bucket] = Stopp(
                         name=strecke.namen[i + 1],
                         ankunft_soc_kwh=ankunft_naechster,
-                        heiz_soc_kwh=heiz_soc,
+                        heiz_dauer_h=heiz_dauer_h,
+                        heiz_energie_kwh=heiz_energie,
                         batterietemperatur_beim_laden_c=batterietemp,
-                        geladen_kwh=max(0.0, buckets[ab_bucket] - (ankunft_naechster - heiz_soc)),
+                        geladen_kwh=max(0.0, buckets[ab_bucket] - (ankunft_naechster - heiz_energie)),
                         netzenergie_kwh=netzenergie,
                         abfahrt_soc_kwh=buckets[ab_bucket],
                     )
