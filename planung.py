@@ -11,7 +11,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from modell import (
+    ETA_KALT,
+    ETA_WARM,
+    HEIZ_WIRKUNGSGRAD,
+    T_ETA_KALT_C,
+    T_ETA_WARM_C,
+    WAERMEKAPAZITAET_KWH_PRO_GRAD,
     Fahrzeug,
     Strecke,
     ladewirkungsgrad,
@@ -78,6 +86,44 @@ def kosten_bei_stopp(
     return bester
 
 
+def _kosten_batch(
+    ankunft_soc_kwh: float,
+    abfahrt_kandidaten_kwh: "np.ndarray",
+    aussentemperatur_c: float,
+    heizen_erlaubt: bool,
+    heiz_aufloesung: int = 60,
+) -> tuple["np.ndarray", "np.ndarray"]:
+    """Wie `kosten_bei_stopp`, aber für alle `abfahrt_kandidaten_kwh` auf einmal (numpy) - dieselbe
+    Suche über die Heizmenge, nur als Matrix statt als Python-Doppelschleife. Rein eine
+    Performance-Variante (der DP-Zustandsraum macht sonst eine Python-Schleife je Sekunde langsam);
+    `test_kosten_batch_stimmt_mit_der_einzelnen_suche_ueberein` prüft, dass beide dasselbe liefern."""
+    max_heiz_soc = ankunft_soc_kwh if heizen_erlaubt else 0.0
+    schritte = heiz_aufloesung if max_heiz_soc > 0 else 0
+    heiz_kandidaten = np.linspace(0.0, max_heiz_soc, schritte + 1)  # (H,)
+
+    delta_t = heiz_kandidaten * HEIZ_WIRKUNGSGRAD / WAERMEKAPAZITAET_KWH_PRO_GRAD
+    batterietemp = aussentemperatur_c + delta_t
+    t_geklemmt = np.clip(batterietemp, T_ETA_KALT_C, T_ETA_WARM_C)
+    anteil = (t_geklemmt - T_ETA_KALT_C) / (T_ETA_WARM_C - T_ETA_KALT_C)
+    eta = ETA_KALT + anteil * (ETA_WARM - ETA_KALT)  # (H,)
+
+    soc_nach_heizen = ankunft_soc_kwh - heiz_kandidaten  # (H,)
+    geladen = abfahrt_kandidaten_kwh[None, :] - soc_nach_heizen[:, None]  # (H, K)
+    unerreichbar = geladen < -1e-9
+    geladen = np.clip(geladen, 0.0, None)
+    netzenergie = geladen / eta[:, None]  # (H, K)
+    netzenergie[unerreichbar] = np.inf
+
+    beste_idx = np.argmin(netzenergie, axis=0)  # (K,)
+    beste_kosten = netzenergie[beste_idx, np.arange(netzenergie.shape[1])]
+    beste_heiz = heiz_kandidaten[beste_idx]
+
+    kein_bedarf = abfahrt_kandidaten_kwh - ankunft_soc_kwh <= 1e-9
+    beste_kosten = np.where(kein_bedarf, 0.0, beste_kosten)
+    beste_heiz = np.where(kein_bedarf, 0.0, beste_heiz)
+    return beste_kosten, beste_heiz
+
+
 def plane_route(
     strecke: Strecke,
     fahrzeug: Fahrzeug,
@@ -100,6 +146,7 @@ def plane_route(
 
     start_bucket = _bucket_index(min(fahrzeug.start_soc_kwh, fahrzeug.kapazitaet_kwh))
     dp[0][start_bucket] = 0.0
+    buckets_arr = np.array(buckets)
 
     for i in range(len(strecke.segmente)):
         segment = strecke.segmente[i]
@@ -124,12 +171,15 @@ def plane_route(
                     stopp_info[i + 1][ziel_bucket_ankunft] = None
                 continue
 
-            # Ladestopp: ueber alle erreichbaren Abfahrt-Buckets >= Ankunft suchen.
-            for ab_bucket in range(ziel_bucket_ankunft, soc_aufloesung + 1):
-                ergebnis = kosten_bei_stopp(ankunft_naechster, buckets[ab_bucket], segment.temperatur_c, heizen_erlaubt)
-                if ergebnis is None:
+            # Ladestopp: ueber alle erreichbaren Abfahrt-Buckets >= Ankunft suchen (vektorisiert -
+            # eine Python-Schleife je Ankunfts-Bucket statt je (Ankunft, Abfahrt)-Paar).
+            abfahrt_kandidaten = buckets_arr[ziel_bucket_ankunft:]
+            kosten_arr, heiz_arr = _kosten_batch(ankunft_naechster, abfahrt_kandidaten, segment.temperatur_c, heizen_erlaubt)
+            for k, ab_bucket in enumerate(range(ziel_bucket_ankunft, soc_aufloesung + 1)):
+                netzenergie = float(kosten_arr[k])
+                if not (netzenergie < UNERREICHBAR):
                     continue
-                netzenergie, heiz_soc = ergebnis
+                heiz_soc = float(heiz_arr[k])
                 gesamt = dp[i][b] + netzenergie
                 if gesamt < dp[i + 1][ab_bucket] - 1e-12:
                     dp[i + 1][ab_bucket] = gesamt

@@ -1,10 +1,12 @@
 import sys
 from pathlib import Path
 
+import numpy as np
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from modell import Fahrzeug, Segment, Strecke, ladewirkungsgrad
-from planung import kosten_bei_stopp, plane_route
+from planung import _kosten_batch, kosten_bei_stopp, plane_route
 
 
 def _einfache_strecke(distanzen_temps: list[tuple[float, float]], namen: list[str] | None = None) -> Strecke:
@@ -109,3 +111,17 @@ def test_kosten_bei_stopp_ohne_heizerlaubnis_entspricht_direkter_formel():
     netzenergie, heiz_soc = ergebnis
     assert heiz_soc == 0.0
     assert abs(netzenergie - 30 / eta) < 1e-9
+
+
+def test_kosten_batch_stimmt_mit_der_einzelnen_suche_ueberein():
+    """Die vektorisierte Batch-Suche (Performance) muss dasselbe liefern wie die einzelne Suche je
+    Abfahrt-Kandidat - nur eben alle auf einmal."""
+    abfahrt_kandidaten = np.array([10.0, 25.0, 40.0, 55.5, 70.0])
+    for heizen_erlaubt in (True, False):
+        kosten_arr, heiz_arr = _kosten_batch(18.0, abfahrt_kandidaten, -12.0, heizen_erlaubt)
+        for i, abfahrt in enumerate(abfahrt_kandidaten):
+            einzeln = kosten_bei_stopp(18.0, float(abfahrt), -12.0, heizen_erlaubt)
+            assert einzeln is not None
+            netzenergie_einzeln, heiz_einzeln = einzeln
+            assert abs(kosten_arr[i] - netzenergie_einzeln) < 1e-6, (heizen_erlaubt, abfahrt)
+            assert abs(heiz_arr[i] - heiz_einzeln) < 1e-6, (heizen_erlaubt, abfahrt)
