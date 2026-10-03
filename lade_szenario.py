@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from lade_constants import DISTANZ_MIN, PRESET_NAMEN, PRESETS
+from lade_constants import DISTANZ_MIN, FAHRZEUGTYPEN, PRESET_NAMEN, PRESETS, STANDARD_FAHRZEUGTYP
 from lade_modell import Segment, Strecke
 
 
@@ -26,7 +26,10 @@ def _distanz_key(i: int) -> str:
 
 
 def init_session_state_defaults() -> None:
-    """Einmalig beim ersten Laden: Start-Preset in den Session State."""
+    """Einmalig beim ersten Laden: Start-Preset und Standard-Fahrzeugtyp in den Session State (die
+    Fahrzeugregler tragen ihren Wert nur über den `key`, kein zusätzliches `value=`)."""
+    if "kapazitaet_slider" not in st.session_state:
+        anwenden_fahrzeugtyp(STANDARD_FAHRZEUGTYP)
     if "anzahl_saeulen_slider" in st.session_state:
         return
     anwenden_preset(PRESET_NAMEN[0])
@@ -41,6 +44,17 @@ def anwenden_preset(name: str) -> None:
     for i, (etappen_name, distanz) in enumerate(preset["etappen"]):
         st.session_state[_distanz_key(i)] = distanz
     st.session_state["etappen_namen"] = [n for n, _ in preset["etappen"]]
+
+
+def anwenden_fahrzeugtyp(name: str) -> None:
+    """on_click-Callback der Fahrzeugtyp-Knöpfe: setzt Kapazität, Verbrauch, Heizleistung und
+    Geschwindigkeit direkt im Session State (die Regler lesen über ihren `key`). Streckenwahl, Temperatur
+    und Start-Akkustand bleiben unverändert."""
+    typ = FAHRZEUGTYPEN[name]
+    st.session_state["kapazitaet_slider"] = typ["kapazitaet"]
+    st.session_state["verbrauch_slider"] = float(typ["verbrauch"])
+    st.session_state["heizleistung_slider"] = float(typ["heizleistung"])
+    st.session_state["geschwindigkeit_slider"] = typ["geschwindigkeit"]
 
 
 def etappen_namen_fuer(anzahl_saeulen: int) -> list[str]:

@@ -64,6 +64,7 @@ def kosten_bei_stopp(
     heizleistung_kw: float,
     heizen_erlaubt: bool,
     heiz_aufloesung: int = 400,
+    waermekapazitaet_kwh_pro_grad: float = WAERMEKAPAZITAET_KWH_PRO_GRAD,
 ) -> tuple[float, float] | None:
     """Minimale aus dem Netz gezogene Energie, um von `ankunft_soc_kwh` auf `abfahrt_soc_kwh` zu
     kommen, optimal über die Heizdauer während der letzten `segment_zeit_h` Stunden vor dem Stopp
@@ -79,7 +80,7 @@ def kosten_bei_stopp(
     schritte = heiz_aufloesung if max_dauer_h > 0 else 0
     for i in range(schritte + 1):
         heiz_dauer_h = max_dauer_h * i / schritte if schritte else 0.0
-        batterietemp = batterietemperatur_nach_heizen(aussentemperatur_c, heiz_dauer_h, heizleistung_kw)
+        batterietemp = batterietemperatur_nach_heizen(aussentemperatur_c, heiz_dauer_h, heizleistung_kw, waermekapazitaet_kwh_pro_grad)
         eta = ladewirkungsgrad(batterietemp)
         heiz_energie = heizleistung_kw * heiz_dauer_h
         soc_nach_heizen = ankunft_soc_kwh - heiz_energie
@@ -101,6 +102,7 @@ def _kosten_batch(
     heizleistung_kw: float,
     heizen_erlaubt: bool,
     heiz_aufloesung: int = 400,
+    waermekapazitaet_kwh_pro_grad: float = WAERMEKAPAZITAET_KWH_PRO_GRAD,
 ) -> tuple["np.ndarray", "np.ndarray"]:
     """Wie `kosten_bei_stopp`, aber für alle `abfahrt_kandidaten_kwh` auf einmal (numpy) - dieselbe
     Suche über die Heizdauer, nur als Matrix statt als Python-Doppelschleife. Rein eine
@@ -111,7 +113,7 @@ def _kosten_batch(
     heiz_kandidaten_h = np.linspace(0.0, max_dauer_h, schritte + 1)  # (H,)
 
     # batterietemperatur_nach_heizen() vektorisiert (identische Formel, siehe lade_modell.py):
-    heizrate_pro_h = heizleistung_kw * HEIZ_WIRKUNGSGRAD / WAERMEKAPAZITAET_KWH_PRO_GRAD
+    heizrate_pro_h = heizleistung_kw * HEIZ_WIRKUNGSGRAD / waermekapazitaet_kwh_pro_grad
     k = 1.0 / WAERMEVERLUST_ZEITKONSTANTE_H
     batterietemp = aussentemperatur_c + (heizrate_pro_h / k) * (1.0 - np.exp(-k * heiz_kandidaten_h))
     t_geklemmt = np.clip(batterietemp, T_ETA_KALT_C, T_ETA_WARM_C)
@@ -188,7 +190,8 @@ def plane_route(
             # eine Python-Schleife je Ankunfts-Bucket statt je (Ankunft, Abfahrt)-Paar).
             abfahrt_kandidaten = buckets_arr[ziel_bucket_ankunft:]
             kosten_arr, heiz_dauer_arr = _kosten_batch(
-                ankunft_naechster, abfahrt_kandidaten, segment.temperatur_c, segment_zeit_h, fahrzeug.heizleistung_kw, heizen_erlaubt
+                ankunft_naechster, abfahrt_kandidaten, segment.temperatur_c, segment_zeit_h, fahrzeug.heizleistung_kw, heizen_erlaubt,
+                waermekapazitaet_kwh_pro_grad=fahrzeug.waermekapazitaet_kwh_pro_grad,
             )
             for k, ab_bucket in enumerate(range(ziel_bucket_ankunft, soc_aufloesung + 1)):
                 netzenergie = float(kosten_arr[k])
@@ -200,7 +203,9 @@ def plane_route(
                     dp[i + 1][ab_bucket] = gesamt
                     herkunft[i + 1][ab_bucket] = b
                     heiz_energie = fahrzeug.heizleistung_kw * heiz_dauer_h
-                    batterietemp = batterietemperatur_nach_heizen(segment.temperatur_c, heiz_dauer_h, fahrzeug.heizleistung_kw)
+                    batterietemp = batterietemperatur_nach_heizen(
+                        segment.temperatur_c, heiz_dauer_h, fahrzeug.heizleistung_kw, fahrzeug.waermekapazitaet_kwh_pro_grad
+                    )
                     stopp_info[i + 1][ab_bucket] = Stopp(
                         name=strecke.namen[i + 1],
                         ankunft_soc_kwh=ankunft_naechster,

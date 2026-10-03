@@ -91,7 +91,10 @@ def test_geschwindigkeit_und_heizleistung_regler_vorhanden_und_wirksam():
 def test_presets_stehen_oben_in_der_mitte_nicht_in_der_sidebar():
     at = AppTest.from_file(APP, default_timeout=60)
     at.run()
-    assert len(at.button) == 3
+    from lade_constants import FAHRZEUGTYP_NAMEN, PRESET_NAMEN
+
+    # drei Beispielstrecken + vier Fahrzeugtypen, alle im Hauptbereich
+    assert len(at.button) == len(PRESET_NAMEN) + len(FAHRZEUGTYP_NAMEN)
     assert len(at.sidebar.button) == 0
 
 
@@ -100,3 +103,25 @@ def test_mathematische_formulierung_expander_vorhanden():
     at.run()
     titel = [e.label for e in at.expander]
     assert any("Mathematische Formulierung" in t for t in titel)
+
+
+def test_fahrzeugtyp_knoepfe_setzen_die_fahrzeugregler_und_bleiben_fehlerfrei():
+    from lade_constants import FAHRZEUGTYPEN
+
+    for name, werte in FAHRZEUGTYPEN.items():
+        at = AppTest.from_file(APP, default_timeout=60)
+        at.run()
+        at.button(key=f"fahrzeugtyp_{name}").click().run()
+        assert not at.exception, name
+        assert at.sidebar.slider(key="kapazitaet_slider").value == werte["kapazitaet"]
+        assert at.sidebar.slider(key="verbrauch_slider").value == werte["verbrauch"]
+        assert at.sidebar.slider(key="heizleistung_slider").value == werte["heizleistung"]
+        assert at.sidebar.slider(key="geschwindigkeit_slider").value == werte["geschwindigkeit"]
+        assert len(at.metric) == 3  # Strecke bleibt erreichbar
+
+
+def test_titel_und_einleitung_sind_fahrzeugunabhaengig():
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    assert "Elektrofahrzeug" in at.title[0].value
+    assert "Lieferfahrzeug" not in at.title[0].value

@@ -6,6 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from lade_modell import (
     ETA_KALT,
     ETA_WARM,
+    REFERENZ_KAPAZITAET_KWH,
+    WAERMEKAPAZITAET_KWH_PRO_GRAD,
     WAERMEVERLUST_ZEITKONSTANTE_H,
     Fahrzeug,
     Segment,
@@ -13,6 +15,7 @@ from lade_modell import (
     batterietemperatur_nach_heizen,
     ladewirkungsgrad,
     verbrauch_kwh_km,
+    waermekapazitaet_kwh_pro_grad,
 )
 
 
@@ -98,3 +101,28 @@ def test_strecke_distanz_und_ladestationen():
 def test_fahrzeug_ist_ein_einfaches_datenobjekt():
     f = Fahrzeug(kapazitaet_kwh=80, basisverbrauch_kwh_km=0.32, start_soc_kwh=80)
     assert f.reserve_kwh == 0.0
+
+
+# ---------- Wärmekapazität wächst mit der Batteriekapazität (Fahrzeugtypen) ----------
+
+
+def test_waermekapazitaet_des_referenzpakets_entspricht_der_konstante():
+    assert waermekapazitaet_kwh_pro_grad(REFERENZ_KAPAZITAET_KWH) == WAERMEKAPAZITAET_KWH_PRO_GRAD
+
+
+def test_waermekapazitaet_ist_proportional_zur_kapazitaet():
+    assert waermekapazitaet_kwh_pro_grad(160.0) == 2 * waermekapazitaet_kwh_pro_grad(80.0)
+    assert Fahrzeug(kapazitaet_kwh=620, basisverbrauch_kwh_km=1.2, start_soc_kwh=620).waermekapazitaet_kwh_pro_grad == waermekapazitaet_kwh_pro_grad(620.0)
+
+
+def test_standardaufruf_bleibt_das_80_kwh_referenzpaket():
+    """Abwärtskompatibel: ohne Wärmekapazitäts-Argument rechnet die Funktion wie vor der Fahrzeugtypen."""
+    assert batterietemperatur_nach_heizen(-10.0, 0.5, 6.0) == batterietemperatur_nach_heizen(
+        -10.0, 0.5, 6.0, waermekapazitaet_kwh_pro_grad(80.0)
+    )
+
+
+def test_groesseres_paket_erwaermt_sich_bei_gleicher_heizleistung_langsamer():
+    klein = batterietemperatur_nach_heizen(-10.0, 0.5, 6.0, waermekapazitaet_kwh_pro_grad(80.0))
+    gross = batterietemperatur_nach_heizen(-10.0, 0.5, 6.0, waermekapazitaet_kwh_pro_grad(620.0))
+    assert klein > gross > -10.0

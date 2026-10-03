@@ -26,6 +26,13 @@ Kalibrierung, mit echten Quellen (keine frei erfundenen Zahlen):
   Stunden (passive, ungeregelte Abkühlung) - deutlich länger als eine einzelne Fahrstrecke, aber
   nicht vernachlässigbar bei langem Heizen.
 
+Geltungsbereich: Die Kalibrierungsquellen oben sind Pkw-Studien (AAA-Test, LEAF-Taxis). Die Richtung der
+Effekte (Kälte erhöht den Verbrauch und senkt den Ladewirkungsgrad) hängt an der Li-Ion-Chemie und gilt
+für jedes Elektrofahrzeug; die Zahlenwerte übertragen sich auf Lieferwagen, Busse und Lkw nur näherungsweise:
+der relative Kälte-Mehrverbrauch dürfte bei Nutzfahrzeugen anders ausfallen (hier ungeprüft), und größere
+Pakete kühlen wegen des kleineren Oberfläche-zu-Volumen-Verhältnisses langsamer aus als die 9 Stunden aus
+der Pkw-Fallstudie - die Zeitkonstante ist für sie also eher konservativ.
+
 Heizen passiert WÄHREND der Fahrt des letzten Abschnitts vor einer Ladesäule, nicht "unmittelbar
 davor": begrenzt durch die Heizleistung (braucht Zeit, keine beliebig schnelle Erwärmung) UND durch
 Wärmeverlust an die kalte Außenluft während des Heizens (exponentielle Annäherung an eine
@@ -69,18 +76,33 @@ def ladewirkungsgrad(batterietemperatur_c: float) -> float:
 
 # ---------- Batterieheizung: Leistung, Zeit, Wärmeverlust ----------
 
-WAERMEKAPAZITAET_KWH_PRO_GRAD = 0.125  # ~450 kg Zellpaket, spez. Wärmekapazität ~1,0 kJ/(kg·K)
+# Wärmekapazität des Zellpakets: proportional zur Batteriekapazität (mehr kWh = mehr Zellmasse). Referenz
+# ist das Standardfahrzeug mit 80 kWh: ~450 kg Zellpaket (~0,18 kWh/kg Pack-Energiedichte), spez.
+# Wärmekapazität ~1,0 kJ/(kg·K) = 0,125 kWh/K. Größere Pakete (Bus, Lkw) erwärmen sich bei gleicher
+# Heizleistung entsprechend langsamer.
+REFERENZ_KAPAZITAET_KWH = 80.0
+WAERMEKAPAZITAET_KWH_PRO_GRAD = 0.125  # Wert für das Referenzpaket (80 kWh); allgemein: waermekapazitaet_kwh_pro_grad()
+
+
+def waermekapazitaet_kwh_pro_grad(kapazitaet_kwh: float) -> float:
+    """Wärmekapazität des Zellpakets in kWh/K - proportional zur Batteriekapazität."""
+    return WAERMEKAPAZITAET_KWH_PRO_GRAD * kapazitaet_kwh / REFERENZ_KAPAZITAET_KWH
 HEIZ_WIRKUNGSGRAD = 0.9  # Anteil der Heizleistung, der die Zellen tatsächlich erwärmt (statt z. B. das Gehäuse)
 HEIZLEISTUNG_KW_STANDARD = 6.0  # Tesla Model 3 (3-8 kW typisch für große Pakete)
 WAERMEVERLUST_ZEITKONSTANTE_H = 9.0  # Erfahrungswert, passive Abkühlung (Nissan-LEAF-Fallstudie)
 
 
-def batterietemperatur_nach_heizen(aussentemperatur_c: float, heiz_dauer_h: float, heizleistung_kw: float = HEIZLEISTUNG_KW_STANDARD) -> float:
+def batterietemperatur_nach_heizen(
+    aussentemperatur_c: float,
+    heiz_dauer_h: float,
+    heizleistung_kw: float = HEIZLEISTUNG_KW_STANDARD,
+    waermekapazitaet_kwh_pro_grad: float = WAERMEKAPAZITAET_KWH_PRO_GRAD,
+) -> float:
     """Batterietemperatur nach `heiz_dauer_h` Stunden Heizen bei konstanter Leistung, ausgehend von der
     Außentemperatur, mit gleichzeitigem Wärmeverlust an die Umgebung (exponentielle Annäherung an eine
     Gleichgewichtstemperatur statt eines linearen Anstiegs - Newtonsches Abkühlungsgesetz rückwärts):
 
-        dT/dt = heizleistung_kw * HEIZ_WIRKUNGSGRAD / WAERMEKAPAZITAET_KWH_PRO_GRAD - k * (T - T_aussen)
+        dT/dt = heizleistung_kw * HEIZ_WIRKUNGSGRAD / waermekapazitaet_kwh_pro_grad - k * (T - T_aussen)
 
     mit k = 1 / WAERMEVERLUST_ZEITKONSTANTE_H. Geschlossene Lösung für T(0) = T_aussen:
 
@@ -88,7 +110,7 @@ def batterietemperatur_nach_heizen(aussentemperatur_c: float, heiz_dauer_h: floa
     """
     if heiz_dauer_h <= 0:
         return aussentemperatur_c
-    heizrate_pro_h = heizleistung_kw * HEIZ_WIRKUNGSGRAD / WAERMEKAPAZITAET_KWH_PRO_GRAD
+    heizrate_pro_h = heizleistung_kw * HEIZ_WIRKUNGSGRAD / waermekapazitaet_kwh_pro_grad
     k = 1.0 / WAERMEVERLUST_ZEITKONSTANTE_H
     return aussentemperatur_c + (heizrate_pro_h / k) * (1.0 - math.exp(-k * heiz_dauer_h))
 
@@ -104,6 +126,11 @@ class Fahrzeug:
     reserve_kwh: float = 0.0  # Sicherheitsreserve, die am Ziel mindestens übrig bleiben muss
     geschwindigkeit_kmh: float = 80.0  # bestimmt, wie viel Zeit fürs Heizen während eines Abschnitts bleibt
     heizleistung_kw: float = HEIZLEISTUNG_KW_STANDARD
+
+    @property
+    def waermekapazitaet_kwh_pro_grad(self) -> float:
+        """Wärmekapazität des Zellpakets dieses Fahrzeugs (proportional zur Kapazität)."""
+        return waermekapazitaet_kwh_pro_grad(self.kapazitaet_kwh)
 
 
 @dataclass(frozen=True)

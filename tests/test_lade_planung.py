@@ -2,10 +2,13 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from lade_constants import FAHRZEUGTYPEN, PRESETS
 from lade_modell import Fahrzeug, Segment, Strecke, ladewirkungsgrad
+from lade_szenario import baue_strecke
 from lade_planung import _kosten_batch, kosten_bei_stopp, plane_route
 
 
@@ -159,3 +162,34 @@ def test_kosten_batch_stimmt_mit_der_einzelnen_suche_ueberein():
             netzenergie_einzeln, heiz_einzeln = einzeln
             assert abs(kosten_arr[i] - netzenergie_einzeln) < 1e-6, (heizen_erlaubt, abfahrt)
             assert abs(heiz_arr[i] - heiz_einzeln) < 1e-6, (heizen_erlaubt, abfahrt)
+
+
+@pytest.mark.parametrize("typ", list(FAHRZEUGTYPEN))
+@pytest.mark.parametrize("preset", list(PRESETS))
+@pytest.mark.parametrize("temperatur", [-20.0, -5.0, 10.0])
+def test_alle_fahrzeugtypen_erreichen_alle_beispielstrecken_und_heizen_ist_nie_schlechter(typ, preset, temperatur):
+    """Pkw, Lieferwagen, Elektrobus und Elektro-Lkw: jede Beispielstrecke ist über den vollen
+    Temperaturbereich erreichbar, und die Heizoption verschlechtert das Ergebnis nie."""
+    v = FAHRZEUGTYPEN[typ]
+    strecke = baue_strecke(PRESETS[preset]["start"], PRESETS[preset]["etappen"], temperatur)
+    fahrzeug = Fahrzeug(
+        kapazitaet_kwh=v["kapazitaet"], basisverbrauch_kwh_km=v["verbrauch"], start_soc_kwh=v["kapazitaet"],
+        geschwindigkeit_kmh=v["geschwindigkeit"], heizleistung_kw=v["heizleistung"],
+    )
+    mit = plane_route(strecke, fahrzeug, heizen_erlaubt=True, soc_aufloesung=100)
+    ohne = plane_route(strecke, fahrzeug, heizen_erlaubt=False, soc_aufloesung=100)
+    assert mit.erreichbar and ohne.erreichbar
+    assert mit.netzenergie_gesamt_kwh <= ohne.netzenergie_gesamt_kwh + 1e-6
+
+
+def test_batch_und_einzelsuche_stimmen_auch_bei_grossem_paket_ueberein():
+    from lade_modell import waermekapazitaet_kwh_pro_grad
+
+    c = waermekapazitaet_kwh_pro_grad(620.0)
+    abfahrt = np.array([300.0, 450.0, 600.0])
+    kosten_arr, heiz_arr = _kosten_batch(250.0, abfahrt, -12.0, 1.0, 45.0, True, waermekapazitaet_kwh_pro_grad=c)
+    for k, ab in enumerate(abfahrt):
+        einzeln = kosten_bei_stopp(250.0, float(ab), -12.0, 1.0, 45.0, True, waermekapazitaet_kwh_pro_grad=c)
+        assert einzeln is not None
+        assert abs(einzeln[0] - kosten_arr[k]) < 1e-6
+        assert abs(einzeln[1] - heiz_arr[k]) < 1e-9

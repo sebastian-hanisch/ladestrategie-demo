@@ -1,9 +1,9 @@
-# Ladestrategie: E-Lieferfahrzeug im Winter – Streamlit-Demo
+# Ladestrategie: Elektrofahrzeug im Winter – Streamlit-Demo
 
 **[→ Demo live ausprobieren](https://sebastianhanisch-ladestrategie-demo.streamlit.app/)**
 
 Fall-Demo (Transport & Tourenplanung) für die Website "Sebastian Hanisch – Operations Research und
-Machine Learning": ein E-Lieferfahrzeug fährt eine Strecke mit **frei einstellbaren**
+Machine Learning": ein Elektrofahrzeug (Pkw, Lieferwagen, Bus oder Lkw) fährt eine Strecke mit **frei einstellbaren**
 Schnellladesäulen-Positionen (Anzahl, Abstände und Start frei wählbar, drei generische
 Beispielstrecken oben als Schnellstart – keine behauptete reale Geografie, nur die Distanzen
 zählen). Entschieden wird an jeder Säule, wie viel geladen und wie lange während der Fahrt vorher
@@ -40,10 +40,22 @@ mehr, als es einspart, oder reicht schlicht nicht aus.
   gleicher Ladezeit 36 % weniger Ladestand als bei 25 °C, Schnellladen bis zu 3-mal langsamer. Das ist
   überwiegend ein Leistungseffekt (die Ladesteuerung drosselt den Strom zum Zellschutz), kein reiner
   Energie-Effizienz-Effekt – deshalb bewusst getrennt vom Ladewirkungsgrad oben.
+- **Fahrzeugtypen**: vier Knöpfe setzen Kapazität, Basisverbrauch, Heizleistung und Geschwindigkeit auf
+  typische Größenordnungen – Pkw (60 kWh, 0,17 kWh/km), Lieferwagen (80 kWh, 0,32 kWh/km, Standard,
+  orientiert an eSprinter/ID. Buzz Cargo), Elektrobus (350 kWh, 1,3 kWh/km; der eCitaro hat bis zu
+  588 kWh) und Elektro-Lkw (620 kWh, 1,2 kWh/km, orientiert am eActros 600 mit 621 kWh). Der
+  Busverbrauch und die Heizleistungen von Bus und Lkw sind Annahmen, keine Herstellerwerte. Alle Regler
+  bleiben frei einstellbar (Kapazität 20–700 kWh, Verbrauch 0,10–2,0 kWh/km, Heizleistung 1–60 kW).
+- **Übertragbarkeit**: Die Kalibrierungsquellen unten sind Pkw-Studien. Die Richtung der Effekte hängt an
+  der Li-Ion-Chemie und gilt für jedes Elektrofahrzeug, die Zahlenwerte übertragen sich nur näherungsweise
+  (relativer Kälte-Mehrverbrauch bei Nutzfahrzeugen hier ungeprüft; größere Pakete kühlen langsamer aus,
+  die 9-Stunden-Zeitkonstante ist für sie eher konservativ). Die Wärmekapazität des Zellpakets wächst
+  proportional zur Batteriekapazität (80 kWh ≙ 450 kg ≙ 0,125 kWh/K), ein größeres Paket erwärmt sich bei
+  gleicher Heizleistung also langsamer.
 - **Heizen während der Fahrt**: entnimmt Energie aus dem eigenen Akku und erhöht die Batterietemperatur,
   begrenzt durch zwei reale Grenzen statt beliebig schneller, unbegrenzter Erwärmung:
-  - die **Heizleistung** (3–8 kW typisch für große Batteriepakete, z. B. Tesla Model 3 mit 6 kW als
-    Standardwert) begrenzt, wie schnell Energie überhaupt zugeführt werden kann, und
+  - die **Heizleistung** (3–8 kW bei Pkw-Paketen, z. B. Tesla Model 3 mit 6 kW als Standardwert; bei
+    Bus und Lkw proportional größer angenommen) begrenzt, wie schnell Energie überhaupt zugeführt werden kann, und
   - der **Wärmeverlust an die kalte Außenluft** während des Heizens führt zu einer exponentiellen
     Annäherung an eine Gleichgewichtstemperatur statt eines linearen Anstiegs (Newtonsches
     Abkühlungsgesetz rückwärts). Die thermische Zeitkonstante (9 Stunden) ist ein Erfahrungswert aus
@@ -72,13 +84,13 @@ Expander "📐 Mathematische Formulierung" in der App.
 Struktur und Namenskonvention (`lade_*`-Präfix) folgen dem übrigen Demo-Portfolio (siehe z. B.
 `dj_*` der Dijkstra-Demo oder `vrp_*` der VRP-Demo):
 
-- `lade_constants.py` – Regler-Wertebereiche, Standardwerte und die drei Beispielstrecken (Presets)
+- `lade_constants.py` – Regler-Wertebereiche, Standardwerte, die vier Fahrzeugtypen und die drei Beispielstrecken (Presets)
 - `lade_modell.py` – physikalisches Modell: temperaturabhängiger Verbrauch, temperaturabhängiger
   Ladewirkungsgrad, zeit-/leistungsbegrenzte Batterieheizung, Datenklassen für Fahrzeug und Strecke
 - `lade_planung.py` – dynamische Programmierung über (Haltepunkt, Akkustand) mit lokaler,
   vektorisierter Heiz-/Ladesuche an jedem Stopp
 - `lade_szenario.py` – baut die `Strecke` aus Start/Etappen/Temperatur und verwaltet den Session State
-  der frei einstellbaren Route (Presets, Anzahl Ladesäulen, Distanzen)
+  der frei einstellbaren Route (Presets, Anzahl Ladesäulen, Distanzen) sowie den Fahrzeugtyp-Callback
 - `lade_visualisierung.py` – Plotly-Diagramme (Akkustand über die Strecke, Netzenergie über die
   Außentemperatur)
 - `app.py` – reine Streamlit-Oberflächen-Orchestrierung
