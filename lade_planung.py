@@ -10,6 +10,7 @@ tests/test_lade_planung.py für die Konvergenzprüfung gegen eine feinere Auflö
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -145,80 +146,107 @@ def plane_route(
     soc_aufloesung: int = 300,
 ) -> Ergebnis:
     """Energieminimaler Lade-/Heizplan über die ganze Strecke (dynamische Programmierung über
-    Haltepunkt × diskretisierten Akkustand)."""
+    Haltepunkt × diskretisierten Akkustand).
+
+    Der Zustand ist die Abfahrt-SOC-Stufe; zu jeder Stufe wird zusätzlich der **exakte** Akkustand des
+    besten Labels mitgeführt (`soc_exakt`). Geladen wird nur auf Stufenwerte, wer nicht lädt, fährt mit
+    seinem exakten Akkustand weiter (Stufe = abgerundeter Index). So rundet die Diskretisierung weder
+    einen Start- noch einen Ankunftsstand auf oder ab: ein Halt, an dem nichts geladen werden muss,
+    kostet genau 0 kWh."""
     n = len(strecke.namen)
     bucket_kwh = fahrzeug.kapazitaet_kwh / soc_aufloesung
     buckets = [round(i * bucket_kwh, 9) for i in range(soc_aufloesung + 1)]
 
-    def _bucket_index(soc: float) -> int:
-        return max(0, min(soc_aufloesung, round(soc / bucket_kwh)))
+    def _bucket_unten(soc: float) -> int:
+        return max(0, min(soc_aufloesung, int(math.floor(soc / bucket_kwh + 1e-9))))
 
-    # dp[stopp][bucket] = minimale Netzenergie bisher
+    # dp[stopp][bucket] = minimale Netzenergie bisher; soc_exakt[stopp][bucket] = exakter Akkustand dieses Labels
     dp: list[list[float]] = [[UNERREICHBAR] * (soc_aufloesung + 1) for _ in range(n)]
+    soc_exakt: list[list[float]] = [[0.0] * (soc_aufloesung + 1) for _ in range(n)]
     herkunft: list[list[int | None]] = [[None] * (soc_aufloesung + 1) for _ in range(n)]
     stopp_info: list[list[Stopp | None]] = [[None] * (soc_aufloesung + 1) for _ in range(n)]
 
-    start_bucket = _bucket_index(min(fahrzeug.start_soc_kwh, fahrzeug.kapazitaet_kwh))
+    start_soc = min(fahrzeug.start_soc_kwh, fahrzeug.kapazitaet_kwh)
+    start_bucket = _bucket_unten(start_soc)
     dp[0][start_bucket] = 0.0
+    soc_exakt[0][start_bucket] = start_soc
     buckets_arr = np.array(buckets)
+
+    def _setze(i: int, bucket: int, kosten: float, soc: float, von: int, info: Stopp | None) -> None:
+        """Label eintragen, wenn billiger (bei Kostengleichheit: der mit dem höheren Akkustand)."""
+        if kosten < dp[i][bucket] - 1e-12 or (kosten <= dp[i][bucket] + 1e-12 and soc > soc_exakt[i][bucket]):
+            dp[i][bucket] = kosten
+            soc_exakt[i][bucket] = soc
+            herkunft[i][bucket] = von
+            stopp_info[i][bucket] = info
 
     for i in range(len(strecke.segmente)):
         segment = strecke.segmente[i]
         segment_zeit_h = segment.distanz_km / fahrzeug.geschwindigkeit_kmh
         ist_ziel = i + 1 == n - 1
+        verbrauch_segment = verbrauch_kwh_km(fahrzeug.basisverbrauch_kwh_km, segment.temperatur_c) * segment.distanz_km
         for b in range(soc_aufloesung + 1):
             if dp[i][b] == UNERREICHBAR:
                 continue
-            ankunft_naechster = buckets[b] - verbrauch_kwh_km(fahrzeug.basisverbrauch_kwh_km, segment.temperatur_c) * segment.distanz_km
+            ankunft_naechster = soc_exakt[i][b] - verbrauch_segment
             if ankunft_naechster < -1e-9:
                 continue
             ankunft_naechster = max(0.0, ankunft_naechster)
-            ziel_bucket_ankunft = _bucket_index(ankunft_naechster)
 
             if ist_ziel:
                 # Am Ziel wird nicht geladen - Ankunft muss nur die Reserve erfüllen.
                 if ankunft_naechster + 1e-9 < fahrzeug.reserve_kwh:
                     continue
-                kosten = dp[i][b]
-                if kosten < dp[i + 1][ziel_bucket_ankunft]:
-                    dp[i + 1][ziel_bucket_ankunft] = kosten
-                    herkunft[i + 1][ziel_bucket_ankunft] = b
-                    stopp_info[i + 1][ziel_bucket_ankunft] = None
+                _setze(i + 1, _bucket_unten(ankunft_naechster), dp[i][b], ankunft_naechster, b, None)
                 continue
 
-            # Ladestopp: ueber alle erreichbaren Abfahrt-Buckets >= Ankunft suchen (vektorisiert -
+            # Option 1: nicht laden (und nicht heizen) - mit exaktem Akkustand weiterfahren.
+            _setze(
+                i + 1, _bucket_unten(ankunft_naechster), dp[i][b], ankunft_naechster, b,
+                Stopp(
+                    name=strecke.namen[i + 1], ankunft_soc_kwh=ankunft_naechster, heiz_dauer_h=0.0, heiz_energie_kwh=0.0,
+                    batterietemperatur_beim_laden_c=segment.temperatur_c, geladen_kwh=0.0, netzenergie_kwh=0.0,
+                    abfahrt_soc_kwh=ankunft_naechster,
+                ),
+            )
+
+            # Option 2: auf eine höhere Stufe laden - über alle Stufen strikt über der Ankunft (vektorisiert -
             # eine Python-Schleife je Ankunfts-Bucket statt je (Ankunft, Abfahrt)-Paar).
-            abfahrt_kandidaten = buckets_arr[ziel_bucket_ankunft:]
+            erste = int(np.searchsorted(buckets_arr, ankunft_naechster + 1e-9, side="left"))
+            if erste > soc_aufloesung:
+                continue
+            abfahrt_kandidaten = buckets_arr[erste:]
             kosten_arr, heiz_dauer_arr = _kosten_batch(
                 ankunft_naechster, abfahrt_kandidaten, segment.temperatur_c, segment_zeit_h, fahrzeug.heizleistung_kw, heizen_erlaubt,
                 waermekapazitaet_kwh_pro_grad=fahrzeug.waermekapazitaet_kwh_pro_grad,
             )
-            for k, ab_bucket in enumerate(range(ziel_bucket_ankunft, soc_aufloesung + 1)):
+            for k, ab_bucket in enumerate(range(erste, soc_aufloesung + 1)):
                 netzenergie = float(kosten_arr[k])
                 if not (netzenergie < UNERREICHBAR):
                     continue
-                heiz_dauer_h = float(heiz_dauer_arr[k])
                 gesamt = dp[i][b] + netzenergie
-                if gesamt < dp[i + 1][ab_bucket] - 1e-12:
-                    dp[i + 1][ab_bucket] = gesamt
-                    herkunft[i + 1][ab_bucket] = b
+                if gesamt < dp[i + 1][ab_bucket] - 1e-12 or (gesamt <= dp[i + 1][ab_bucket] + 1e-12 and buckets[ab_bucket] > soc_exakt[i + 1][ab_bucket]):
+                    heiz_dauer_h = float(heiz_dauer_arr[k])
                     heiz_energie = fahrzeug.heizleistung_kw * heiz_dauer_h
                     batterietemp = batterietemperatur_nach_heizen(
                         segment.temperatur_c, heiz_dauer_h, fahrzeug.heizleistung_kw, fahrzeug.waermekapazitaet_kwh_pro_grad
                     )
-                    stopp_info[i + 1][ab_bucket] = Stopp(
-                        name=strecke.namen[i + 1],
-                        ankunft_soc_kwh=ankunft_naechster,
-                        heiz_dauer_h=heiz_dauer_h,
-                        heiz_energie_kwh=heiz_energie,
-                        batterietemperatur_beim_laden_c=batterietemp,
-                        geladen_kwh=max(0.0, buckets[ab_bucket] - (ankunft_naechster - heiz_energie)),
-                        netzenergie_kwh=netzenergie,
-                        abfahrt_soc_kwh=buckets[ab_bucket],
+                    _setze(
+                        i + 1, ab_bucket, gesamt, buckets[ab_bucket], b,
+                        Stopp(
+                            name=strecke.namen[i + 1],
+                            ankunft_soc_kwh=ankunft_naechster,
+                            heiz_dauer_h=heiz_dauer_h,
+                            heiz_energie_kwh=heiz_energie,
+                            batterietemperatur_beim_laden_c=batterietemp,
+                            geladen_kwh=max(0.0, buckets[ab_bucket] - (ankunft_naechster - heiz_energie)),
+                            netzenergie_kwh=netzenergie,
+                            abfahrt_soc_kwh=buckets[ab_bucket],
+                        ),
                     )
 
     letzte = dp[n - 1]
-    bester_bucket = min(range(soc_aufloesung + 1), key=lambda b: letzte[b])
+    bester_bucket = min(range(soc_aufloesung + 1), key=lambda b: (letzte[b], -soc_exakt[n - 1][b]))
     if letzte[bester_bucket] == UNERREICHBAR:
         return Ergebnis(strecke=strecke, heizen_erlaubt=heizen_erlaubt, stopps=[], ankunft_ziel_soc_kwh=0.0, netzenergie_gesamt_kwh=UNERREICHBAR, erreichbar=False)
 
@@ -234,7 +262,7 @@ def plane_route(
         strecke=strecke,
         heizen_erlaubt=heizen_erlaubt,
         stopps=pfad_stopps,
-        ankunft_ziel_soc_kwh=buckets[bester_bucket],
+        ankunft_ziel_soc_kwh=soc_exakt[n - 1][bester_bucket],
         netzenergie_gesamt_kwh=letzte[bester_bucket],
         erreichbar=True,
     )

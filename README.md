@@ -74,8 +74,14 @@ SOC-Stufen diskretisiert. Dieselbe Problemfamilie wie die Kürzeste-Wege-Linie d
 Dynamische Programmierung über (Haltepunkt, Akkustand): je Ladestopp wird über eine feine,
 numpy-vektorisierte Rastersuche über Heizdauer und Lademenge die energieminimale Kombination gesucht
 (`kosten_bei_stopp` / `_kosten_batch` in `lade_planung.py`), die äußere DP (`plane_route`) verkettet
-das über alle Stopps zur global energieminimalen Strategie. Exakt bis auf die Diskretisierung – gegen
-eine deutlich feinere Auflösung geprüft (`tests/test_lade_planung.py`), Abweichung unter 3 %. Die
+das über alle Stopps zur global energieminimalen Strategie. Exakt bis auf die Diskretisierung: Geladen
+wird nur auf SOC-Stufen (Kapazität/300), wer nicht lädt, fährt mit seinem exakten Akkustand weiter.
+Gegen ein unabhängiges, kontinuierliches Optimum (lineares Programm je Heizdauer-Raster mit `scipy`,
+`tests/test_oracle_ladestrategie.py`) lag der Plan in über 400 Zufallsinstanzen mit 1 bis 3 Ladesäulen nie
+darunter und höchstens etwa eine Stufe Ladeenergie je Ladestopp darüber (Stufe geteilt durch den
+schlechtesten Ladewirkungsgrad 0,80); relativ zur Netzenergie fiel das bis etwa 5 % aus, solange diese über
+20 kWh lag, bei kleineren Summen entsprechend mehr. Die Konvergenzprüfung gegen 2000 Stufen
+(`tests/test_lade_planung.py`) bleibt für ihre Beispielstrecke unter 3 %. Die
 vollständige Bellman-Rekursion, die Wärme-ODE und die Kostenfunktion je Stopp stehen als eigener
 Expander "📐 Mathematische Formulierung" in der App.
 
