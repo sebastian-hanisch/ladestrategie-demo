@@ -88,14 +88,14 @@ def test_geschwindigkeit_und_heizleistung_regler_vorhanden_und_wirksam():
     assert not at.exception
 
 
-def test_presets_stehen_oben_in_der_mitte_nicht_in_der_sidebar():
+def test_presets_stehen_oben_in_der_mitte_und_die_fahrzeugtypen_in_der_sidebar():
     at = AppTest.from_file(APP, default_timeout=60)
     at.run()
     from lade_constants import FAHRZEUGTYP_NAMEN, PRESET_NAMEN
 
-    # drei Beispielstrecken + vier Fahrzeugtypen, alle im Hauptbereich
-    assert len(at.button) == len(PRESET_NAMEN) + len(FAHRZEUGTYP_NAMEN)
-    assert len(at.sidebar.button) == 0
+    # drei Beispielstrecken im Hauptbereich, die vier Fahrzeugtypen in der Seitenleiste
+    assert len(at.main.button) == len(PRESET_NAMEN)
+    assert [b.key for b in at.sidebar.button] == [f"fahrzeugtyp_{n}" for n in FAHRZEUGTYP_NAMEN]
 
 
 def test_mathematische_formulierung_expander_vorhanden():
@@ -111,8 +111,9 @@ def test_fahrzeugtyp_knoepfe_setzen_die_fahrzeugregler_und_bleiben_fehlerfrei():
     for name, werte in FAHRZEUGTYPEN.items():
         at = AppTest.from_file(APP, default_timeout=60)
         at.run()
-        at.button(key=f"fahrzeugtyp_{name}").click().run()
+        at.sidebar.button(key=f"fahrzeugtyp_{name}").click().run()
         assert not at.exception, name
+        assert at.session_state["fahrzeugtyp"] == name
         assert at.sidebar.slider(key="kapazitaet_slider").value == werte["kapazitaet"]
         assert at.sidebar.slider(key="verbrauch_slider").value == werte["verbrauch"]
         assert at.sidebar.slider(key="heizleistung_slider").value == werte["heizleistung"]
@@ -171,3 +172,36 @@ def test_zu_grosse_reserve_zeigt_fehlermeldung_statt_abzustuerzen():
     at.button[2].click().run()  # Langstrecke, dünn besäult: 150-km-Abschnitte lassen bei 30 % Reserve keinen Spielraum
     assert not at.exception
     assert len(at.error) >= 1
+
+
+def _kopf_html(at) -> str:
+    return " ".join(h.proto.body for h in at.get("html"))
+
+
+def test_piktogramm_unter_der_ueberschrift_wechselt_mit_dem_fahrzeugtyp():
+    from lade_constants import FAHRZEUGTYP_NAMEN, STANDARD_FAHRZEUGTYP
+
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    assert f'data-typ="{STANDARD_FAHRZEUGTYP}"' in _kopf_html(at)
+    for name in FAHRZEUGTYP_NAMEN:
+        at.sidebar.button(key=f"fahrzeugtyp_{name}").click().run()
+        html = _kopf_html(at)
+        assert f'data-typ="{name}"' in html
+        assert html.count('class="lade-piktogramm"') == 1  # genau ein Piktogramm: das des gewählten Typs
+
+
+def test_gewaehlter_fahrzeugtyp_ist_in_der_sidebar_hervorgehoben():
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    at.sidebar.button(key="fahrzeugtyp_Elektrobus").click().run()
+    typen = {b.key: b.proto.type for b in at.sidebar.button}
+    assert typen["fahrzeugtyp_Elektrobus"] == "primary"
+    assert all(t == "secondary" for k, t in typen.items() if k != "fahrzeugtyp_Elektrobus")
+
+
+def test_ueberschrift_und_piktogramm_stehen_in_einem_festen_kopf_container():
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    assert "st-key-kopf" in _kopf_html(at)  # das Stylesheet setzt an der Klasse des Containers an
+    assert at.title[0].value

@@ -57,6 +57,7 @@ from lade_modell import (
     verbrauch_kwh_km,
 )
 from lade_planung import Ergebnis, front_hat_zielkonflikt, pareto_front, plane_route
+from lade_piktogramme import fahrzeug_piktogramm, kopf_css
 from lade_szenario import (
     anwenden_fahrzeugtyp,
     anwenden_preset,
@@ -71,7 +72,23 @@ st.set_page_config(page_title="Ladestrategie: Elektrofahrzeug im Winter", page_i
 
 init_session_state_defaults()
 
-st.title("🔋 Ladestrategie: Elektrofahrzeug im Winter")
+def _dunkles_design() -> bool:
+    """Läuft die App im dunklen Streamlit-Design? Ohne Angabe (z. B. in Tests) gilt das helle."""
+    try:
+        return st.context.theme.type == "dark"
+    except Exception:
+        return False
+
+
+# Fester Kopf: Überschrift und Piktogramm des gewählten Fahrzeugtyps bleiben beim Scrollen stehen. Das Streamlit-
+# Element mit `key="kopf"` bekommt die CSS-Klasse `st-key-kopf`, an der das Stylesheet ansetzt.
+st.html(kopf_css(_dunkles_design()))
+with st.container(key="kopf"):
+    st.title("🔋 Ladestrategie: Elektrofahrzeug im Winter")
+    st.html(
+        f'<div class="lade-fahrzeug">{fahrzeug_piktogramm(st.session_state["fahrzeugtyp"])}'
+        f'<span class="lade-fahrzeug-name">{st.session_state["fahrzeugtyp"]}</span></div>'
+    )
 st.caption("Fall-Demo (Transport & Tourenplanung) von sebastianhanisch.net - echte Studienwerte, keine frei erfundene Physik.")
 
 st.markdown(
@@ -90,13 +107,17 @@ for preset_col, name in zip((preset_col1, preset_col2, preset_col3), PRESET_NAME
     with preset_col:
         st.button(name, on_click=anwenden_preset, args=(name,), width="stretch")
 
-st.caption("🚗 Fahrzeugtyp wählen (setzt Kapazität, Verbrauch, Heizleistung, Ladeleistung und Geschwindigkeit):")
-fahrzeug_cols = st.columns(len(FAHRZEUGTYP_NAMEN))
-for fahrzeug_col, name in zip(fahrzeug_cols, FAHRZEUGTYP_NAMEN):
-    with fahrzeug_col:
-        st.button(name, on_click=anwenden_fahrzeugtyp, args=(name,), width="stretch", key=f"fahrzeugtyp_{name}")
-
 with st.sidebar:
+    st.header("Fahrzeugtyp")
+    st.caption("Setzt Kapazität, Verbrauch, Heizleistung, Ladeleistung und Geschwindigkeit; alle Regler bleiben danach frei einstellbar.")
+    for reihe in (FAHRZEUGTYP_NAMEN[:2], FAHRZEUGTYP_NAMEN[2:]):
+        for spalte, name in zip(st.columns(len(reihe)), reihe):
+            with spalte:
+                st.button(
+                    name, on_click=anwenden_fahrzeugtyp, args=(name,), width="stretch", key=f"fahrzeugtyp_{name}",
+                    type="primary" if st.session_state["fahrzeugtyp"] == name else "secondary",
+                )
+
     st.header("Strecke")
     st.caption("Eigene Strecke")
     anzahl_saeulen = st.slider("Anzahl Ladesäulen", ANZAHL_SAEULEN_MIN, ANZAHL_SAEULEN_MAX, key="anzahl_saeulen_slider")

@@ -149,6 +149,8 @@ Struktur und Namenskonvention (`lade_*`-Präfix) folgen dem übrigen Demo-Portfo
   adaptive Pareto-Front (`pareto_front`)
 - `lade_szenario.py` – baut die `Strecke` aus Start/Etappen/Temperatur und verwaltet den Session State
   der frei einstellbaren Route (Presets, Anzahl Ladesäulen, Distanzen) sowie den Fahrzeugtyp-Callback
+- `lade_piktogramme.py` – Fahrzeug-Piktogramme (SVG in CSS-Masken, da Streamlit Inline-SVG filtert) und das
+  Stylesheet des festen Kopfes aus Überschrift und Piktogramm
 - `lade_visualisierung.py` – Plotly-Diagramme (Akkustand über die Strecke, Netzenergie über die
   Außentemperatur, Pareto-Front aus Energie und Zeit)
 - `app.py` – reine Streamlit-Oberflächen-Orchestrierung

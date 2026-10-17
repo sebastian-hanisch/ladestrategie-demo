@@ -51,6 +51,7 @@ def anwenden_fahrzeugtyp(name: str) -> None:
     Geschwindigkeit direkt im Session State (die Regler lesen über ihren `key`). Streckenwahl, Temperatur
     und Start-Akkustand bleiben unverändert."""
     typ = FAHRZEUGTYPEN[name]
+    st.session_state["fahrzeugtyp"] = name
     st.session_state["kapazitaet_slider"] = typ["kapazitaet"]
     st.session_state["verbrauch_slider"] = float(typ["verbrauch"])
     st.session_state["heizleistung_slider"] = float(typ["heizleistung"])
