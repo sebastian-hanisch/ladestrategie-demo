@@ -101,22 +101,18 @@ st.markdown(
     "wie sich Energie und Zeit gegeneinander aufwiegen, zeigt Abschnitt 3."
 )
 
-st.caption("🎯 Schnellstart – ein Beispielszenario laden:")
-preset_col1, preset_col2, preset_col3 = st.columns(3)
-for preset_col, name in zip((preset_col1, preset_col2, preset_col3), PRESET_NAMEN):
-    with preset_col:
+with st.sidebar:
+    st.header("🎯 Schnellstart")
+    st.caption("Ein Beispielszenario laden (setzt Start und Distanzen der Strecke):")
+    for name in PRESET_NAMEN:
         st.button(name, on_click=anwenden_preset, args=(name,), width="stretch")
 
-with st.sidebar:
     st.header("Fahrzeugtyp")
     st.caption("Setzt Kapazität, Verbrauch, Heizleistung, Ladeleistung und Geschwindigkeit; alle Regler bleiben danach frei einstellbar.")
-    for reihe in (FAHRZEUGTYP_NAMEN[:2], FAHRZEUGTYP_NAMEN[2:]):
-        for spalte, name in zip(st.columns(len(reihe)), reihe):
-            with spalte:
-                st.button(
-                    name, on_click=anwenden_fahrzeugtyp, args=(name,), width="stretch", key=f"fahrzeugtyp_{name}",
-                    type="primary" if st.session_state["fahrzeugtyp"] == name else "secondary",
-                )
+    st.selectbox(
+        "Fahrzeugtyp", FAHRZEUGTYP_NAMEN, key="fahrzeugtyp", label_visibility="collapsed",
+        on_change=lambda: anwenden_fahrzeugtyp(st.session_state["fahrzeugtyp"]),
+    )
 
     st.header("Strecke")
     st.caption("Eigene Strecke")

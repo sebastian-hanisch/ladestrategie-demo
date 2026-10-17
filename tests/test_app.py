@@ -49,7 +49,7 @@ def test_anderes_preset_laedt_fehlerfrei_und_aendert_die_distanzen():
     at = AppTest.from_file(APP, default_timeout=60)
     at.run()
     distanzen_vorher = [n.value for n in at.sidebar.number_input]
-    at.button[2].click().run()  # "Langstrecke, dünn besäult" - Presets stehen oben in der Mitte, nicht in der Sidebar
+    at.button[2].click().run()  # "Langstrecke, dünn besäult" - die Presets sind die ersten Buttons der Sidebar
     assert not at.exception
     distanzen_nachher = [n.value for n in at.sidebar.number_input]
     assert distanzen_vorher != distanzen_nachher
@@ -88,14 +88,15 @@ def test_geschwindigkeit_und_heizleistung_regler_vorhanden_und_wirksam():
     assert not at.exception
 
 
-def test_presets_stehen_oben_in_der_mitte_und_die_fahrzeugtypen_in_der_sidebar():
+def test_presets_und_fahrzeugtyp_stehen_in_der_sidebar_nicht_im_hauptbereich():
     at = AppTest.from_file(APP, default_timeout=60)
     at.run()
     from lade_constants import FAHRZEUGTYP_NAMEN, PRESET_NAMEN
 
-    # drei Beispielstrecken im Hauptbereich, die vier Fahrzeugtypen in der Seitenleiste
-    assert len(at.main.button) == len(PRESET_NAMEN)
-    assert [b.key for b in at.sidebar.button] == [f"fahrzeugtyp_{n}" for n in FAHRZEUGTYP_NAMEN]
+    # Beispielstrecken als Buttons und Fahrzeugtyp als Dropdown: alles in der Seitenleiste
+    assert len(at.main.button) == 0
+    assert [b.label for b in at.sidebar.button] == list(PRESET_NAMEN)
+    assert list(at.sidebar.selectbox(key="fahrzeugtyp").options) == list(FAHRZEUGTYP_NAMEN)
 
 
 def test_mathematische_formulierung_expander_vorhanden():
@@ -105,13 +106,13 @@ def test_mathematische_formulierung_expander_vorhanden():
     assert any("Mathematische Formulierung" in t for t in titel)
 
 
-def test_fahrzeugtyp_knoepfe_setzen_die_fahrzeugregler_und_bleiben_fehlerfrei():
+def test_fahrzeugtyp_auswahl_setzt_die_fahrzeugregler_und_bleibt_fehlerfrei():
     from lade_constants import FAHRZEUGTYPEN
 
     for name, werte in FAHRZEUGTYPEN.items():
         at = AppTest.from_file(APP, default_timeout=60)
         at.run()
-        at.sidebar.button(key=f"fahrzeugtyp_{name}").click().run()
+        at.sidebar.selectbox(key="fahrzeugtyp").set_value(name).run()
         assert not at.exception, name
         assert at.session_state["fahrzeugtyp"] == name
         assert at.sidebar.slider(key="kapazitaet_slider").value == werte["kapazitaet"]
@@ -185,19 +186,18 @@ def test_piktogramm_unter_der_ueberschrift_wechselt_mit_dem_fahrzeugtyp():
     at.run()
     assert f'data-typ="{STANDARD_FAHRZEUGTYP}"' in _kopf_html(at)
     for name in FAHRZEUGTYP_NAMEN:
-        at.sidebar.button(key=f"fahrzeugtyp_{name}").click().run()
+        at.sidebar.selectbox(key="fahrzeugtyp").set_value(name).run()
         html = _kopf_html(at)
         assert f'data-typ="{name}"' in html
         assert html.count('class="lade-piktogramm"') == 1  # genau ein Piktogramm: das des gewählten Typs
 
 
-def test_gewaehlter_fahrzeugtyp_ist_in_der_sidebar_hervorgehoben():
+def test_fahrzeugtyp_dropdown_zeigt_zu_beginn_den_standardtyp():
+    from lade_constants import STANDARD_FAHRZEUGTYP
+
     at = AppTest.from_file(APP, default_timeout=60)
     at.run()
-    at.sidebar.button(key="fahrzeugtyp_Elektrobus").click().run()
-    typen = {b.key: b.proto.type for b in at.sidebar.button}
-    assert typen["fahrzeugtyp_Elektrobus"] == "primary"
-    assert all(t == "secondary" for k, t in typen.items() if k != "fahrzeugtyp_Elektrobus")
+    assert at.sidebar.selectbox(key="fahrzeugtyp").value == STANDARD_FAHRZEUGTYP
 
 
 def test_ueberschrift_und_piktogramm_stehen_in_einem_festen_kopf_container():

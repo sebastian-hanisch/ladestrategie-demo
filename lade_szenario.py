@@ -47,7 +47,7 @@ def anwenden_preset(name: str) -> None:
 
 
 def anwenden_fahrzeugtyp(name: str) -> None:
-    """on_click-Callback der Fahrzeugtyp-Knöpfe: setzt Kapazität, Verbrauch, Heizleistung, Ladeleistung und
+    """Callback der Fahrzeugtyp-Auswahl: setzt Kapazität, Verbrauch, Heizleistung, Ladeleistung und
     Geschwindigkeit direkt im Session State (die Regler lesen über ihren `key`). Streckenwahl, Temperatur
     und Start-Akkustand bleiben unverändert."""
     typ = FAHRZEUGTYPEN[name]

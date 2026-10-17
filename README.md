@@ -59,7 +59,7 @@ mehr, als es einspart, oder reicht schlicht nicht aus.
   Bei 0 zählt nur die Energie (bei Gleichstand der schnellere Plan) – das ist exakt der bisherige Plan.
 - **Sicherheitsreserve**: Mindest-Akkustand bei **jeder** Ankunft (Säule und Ziel), nicht mehr nur am Ziel.
   Vorheizen darf die Reserve nicht unterschreiten. Standard 0 % – damit bleiben alle bisherigen Zahlen gleich.
-- **Fahrzeugtypen**: vier Knöpfe setzen Kapazität, Basisverbrauch, Heizleistung und Geschwindigkeit auf
+- **Fahrzeugtypen**: eine Auswahlliste in der Seitenleiste setzt Kapazität, Basisverbrauch, Heizleistung und Geschwindigkeit auf
   typische Größenordnungen – Pkw (60 kWh, 0,17 kWh/km), Lieferwagen (80 kWh, 0,32 kWh/km, Standard,
   orientiert an eSprinter/ID. Buzz Cargo), Elektrobus (350 kWh, 1,3 kWh/km; der eCitaro hat bis zu
   588 kWh) und Elektro-Lkw (620 kWh, 1,2 kWh/km, orientiert am eActros 600 mit 621 kWh). Der
