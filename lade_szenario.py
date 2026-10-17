@@ -47,7 +47,7 @@ def anwenden_preset(name: str) -> None:
 
 
 def anwenden_fahrzeugtyp(name: str) -> None:
-    """on_click-Callback der Fahrzeugtyp-Knöpfe: setzt Kapazität, Verbrauch, Heizleistung und
+    """on_click-Callback der Fahrzeugtyp-Knöpfe: setzt Kapazität, Verbrauch, Heizleistung, Ladeleistung und
     Geschwindigkeit direkt im Session State (die Regler lesen über ihren `key`). Streckenwahl, Temperatur
     und Start-Akkustand bleiben unverändert."""
     typ = FAHRZEUGTYPEN[name]
@@ -55,6 +55,7 @@ def anwenden_fahrzeugtyp(name: str) -> None:
     st.session_state["verbrauch_slider"] = float(typ["verbrauch"])
     st.session_state["heizleistung_slider"] = float(typ["heizleistung"])
     st.session_state["geschwindigkeit_slider"] = typ["geschwindigkeit"]
+    st.session_state["ladeleistung_slider"] = float(typ["ladeleistung"])
 
 
 def etappen_namen_fuer(anzahl_saeulen: int) -> list[str]:

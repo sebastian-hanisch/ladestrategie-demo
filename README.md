@@ -9,7 +9,9 @@ Beispielstrecken oben als Schnellstart – keine behauptete reale Geografie, nur
 zählen). Entschieden wird an jeder Säule, wie viel geladen und wie lange während der Fahrt vorher
 geheizt wird. Kälte erhöht den Verbrauch beim Fahren und senkt den Ladewirkungsgrad; Heizen kostet
 selbst Energie, kann sich aber lohnen. Gesucht ist die Strategie mit dem geringsten
-Netzenergieverbrauch über die ganze Strecke.
+Netzenergieverbrauch über die ganze Strecke. Als zweites Kriterium kommt die **Zeit** hinzu (Ladekurve,
+Kältefaktor auf die Ladeleistung, Pauschale je Ladehalt): die App zeigt die Pareto-Front aus Netzenergie
+und Gesamtzeit.
 
 ## Warum dieses Problem
 
@@ -35,17 +37,35 @@ mehr, als es einspart, oder reicht schlicht nicht aus.
   so hoch wie bei Raumtemperatur (mehrere Studien zu Zellen bei tiefen Temperaturen) – kalibriert auf
   95 % bei ≥20 °C und 80 % bei -20 °C, linear dazwischen. Die Literatur belegt Richtung und
   Größenordnung des Effekts, nicht exakt diese Kurve.
-- **Ladeleistung/-zeit bei Kälte** (nicht Teil der Optimierung, nur zur Einordnung): Idaho National
-  Laboratory, empirische Studie an Nissan-LEAF-Taxis (~500 Schnellladevorgänge) – bei 0 °C nach
-  gleicher Ladezeit 36 % weniger Ladestand als bei 25 °C, Schnellladen bis zu 3-mal langsamer. Das ist
-  überwiegend ein Leistungseffekt (die Ladesteuerung drosselt den Strom zum Zellschutz), kein reiner
-  Energie-Effizienz-Effekt – deshalb bewusst getrennt vom Ladewirkungsgrad oben.
+- **Ladeleistung und Ladezeit bei Kälte**: Idaho National Laboratory, empirische Studie an
+  Nissan-LEAF-Taxis (~500 Schnellladevorgänge) – bei 0 °C nach gleicher Ladezeit 36 % weniger Ladestand als
+  bei 25 °C, Schnellladen bis zu 3-mal langsamer. Das ist überwiegend ein Leistungseffekt (die
+  Ladesteuerung drosselt den Strom zum Zellschutz), kein reiner Energie-Effizienz-Effekt – deshalb getrennt
+  vom Ladewirkungsgrad oben und als **Ladezeit** modelliert: ein Temperaturfaktor auf die Ladeleistung,
+  1 ab 20 °C und 1/3 bei -20 °C, linear dazwischen (eine Näherung der Größenordnung, nicht genau diese Kurve;
+  g(0 °C) = 2/3 gegenüber den 0,64 der Studie). Die Batterietemperatur beim Laden gilt vereinfachend für den
+  ganzen Halt.
+- **Ladekurve**: dass die DC-Ladeleistung oberhalb von etwa 80 % Ladestand sinkt, ist gut belegt (Messreihe
+  an 62 Fahrzeugen, MDPI Batteries 2025, 11(11), 394). **Annahme** der Demo: volle Leistung bis 80 %, danach
+  linear fallend auf 20 % bei 100 % – keine Messkurve eines bestimmten Fahrzeugs. Die Ladezeit hat eine
+  geschlossene Stammfunktion (`lade_ladekurve.py`), es wird nicht numerisch integriert. Je Ladehalt, an dem
+  tatsächlich geladen wird, kommt eine Pauschale für Anfahrt und Anstecken hinzu (Standard 5 min, Annahme).
+- **Maximale Ladeleistung der Fahrzeugtypen**: Größenordnungen aus Herstellerangaben – Mercedes eSprinter
+  optional 115 kW DC (10–80 % in etwa 42 min bei 113 kWh), eCitaro 300 kW per Pantograph (150 kW per
+  Stecker), eActros 600 bis 400 kW per CCS (Megawatt-Laden bis 1000 kW als Option angekündigt). Der
+  Pkw-Wert (150 kW) ist eine Annahme. Heute: Pkw 150, Lieferwagen 115, Bus 300, Lkw 400 kW.
+- **Zeit als zweites Kriterium**: Heizen während der Fahrt kostet keine Zeit, Laden schon. Der Plan minimiert
+  Netzenergie + Zeitwert · Ladezeit; der Zeitwert (kWh je Stunde) ist der Regler "Wert einer Stunde Ladezeit".
+  Bei 0 zählt nur die Energie (bei Gleichstand der schnellere Plan) – das ist exakt der bisherige Plan.
+- **Sicherheitsreserve**: Mindest-Akkustand bei **jeder** Ankunft (Säule und Ziel), nicht mehr nur am Ziel.
+  Vorheizen darf die Reserve nicht unterschreiten. Standard 0 % – damit bleiben alle bisherigen Zahlen gleich.
 - **Fahrzeugtypen**: vier Knöpfe setzen Kapazität, Basisverbrauch, Heizleistung und Geschwindigkeit auf
   typische Größenordnungen – Pkw (60 kWh, 0,17 kWh/km), Lieferwagen (80 kWh, 0,32 kWh/km, Standard,
   orientiert an eSprinter/ID. Buzz Cargo), Elektrobus (350 kWh, 1,3 kWh/km; der eCitaro hat bis zu
   588 kWh) und Elektro-Lkw (620 kWh, 1,2 kWh/km, orientiert am eActros 600 mit 621 kWh). Der
   Busverbrauch und die Heizleistungen von Bus und Lkw sind Annahmen, keine Herstellerwerte. Alle Regler
-  bleiben frei einstellbar (Kapazität 20–700 kWh, Verbrauch 0,10–2,0 kWh/km, Heizleistung 1–60 kW).
+  bleiben frei einstellbar (Kapazität 20–700 kWh, Verbrauch 0,10–2,0 kWh/km, Heizleistung 1–60 kW,
+  Ladeleistung 20–1000 kW). Jeder Fahrzeugtyp setzt auch die maximale Ladeleistung.
 - **Übertragbarkeit**: Die Kalibrierungsquellen unten sind Pkw-Studien. Die Richtung der Effekte hängt an
   der Li-Ion-Chemie und gilt für jedes Elektrofahrzeug, die Zahlenwerte übertragen sich nur näherungsweise
   (relativer Kälte-Mehrverbrauch bei Nutzfahrzeugen hier ungeprüft; größere Pakete kühlen langsamer aus,
@@ -85,24 +105,57 @@ schlechtesten Ladewirkungsgrad 0,80); relativ zur Netzenergie fiel das bis etwa 
 vollständige Bellman-Rekursion, die Wärme-ODE und die Kostenfunktion je Stopp stehen als eigener
 Expander "📐 Mathematische Formulierung" in der App.
 
+Das Zeitkriterium wird zusätzlich gegen eine **vollständige Aufzählung** aller Pläne auf kleinen Instanzen (2 Säulen,
+14 SOC-Stufen, 6 Heizschritte) geprüft; die Ladezeit wird dort per Mittelpunktsregel numerisch integriert statt
+aus der geschlossenen Formel berechnet (`tests/test_pareto_ladestrategie.py`). Der Plan ist nie besser als das exakte
+Optimum, trifft es in der Mehrheit der Fälle exakt (gemessen 23 von 30 Zeitwert-Instanz-Paaren) und liegt sonst höchstens etwa eine Stufe je
+Säule darüber. Eine LP-Epigraph-Formulierung wie beim Energie-Orakel trägt hier nicht: die Ladezeit
+τ(Abfahrt) − τ(Stand nach dem Heizen) ist gemeinsam in beiden Akkustand-Variablen nicht konvex.
+
+## Energie gegen Zeit: Methode und Befund
+
+Die Zeitkomponente ist eine **Skalarisierung**: dieselbe dynamische Programmierung, aber mit den Kosten
+Netzenergie + Zeitwert · Ladezeit. Die Front aus Abschnitt 3 der App entsteht, indem der Zeitwert zwischen 0
+(energieminimal) und einem sehr großen Wert geometrisch halbiert wird, solange zwei Pläne noch merklich
+auseinanderliegen (mindestens zwei Minuten und mindestens eine SOC-Stufe bzw. 0,1 % Energie); nähere Pläne gelten
+als derselbe. Das findet nur Pläne auf der **konvexen Hülle** der Front – ein Plan in einer Lücke zwischen zwei
+gefundenen wäre mit keinem Zeitwert optimal und bleibt unentdeckt. Das ist eine bekannte Grenze des Verfahrens und steht
+so auch in der App.
+
+**Befund** (Stand Oktober 2026, Standardeinstellungen: Reserve 0 %, Pauschale 5 min, Ladeleistung je
+Fahrzeugtyp): der Zielkonflikt ist real, aber klein und nicht überall vorhanden. In 12 von 48 durchgerechneten
+Szenarien (4 Fahrzeugtypen × 3 Beispielstrecken × -20/-10/0/+10 °C) gibt es überhaupt eine Front mit mehr als einem
+Punkt; dort spart der schnellste Plan 3 bis 53 min (1 bis 9 % der Gesamtzeit) und braucht dafür 0,4 bis 10 kWh
+(0,4 bis 9 %) mehr Netzenergie. In den übrigen 36 fällt die Front auf einen Punkt zusammen: entweder muss kaum geladen
+werden (Kurzstrecke, mildes Wetter), oder an jeder Säule fast voll (Langstrecke), dann gibt es nichts zu entscheiden.
+Der Zielkonflikt entsteht über drei Entscheidungen: Heizen (kostet Akkuenergie, spart Ladezeit, weil ein warmer Akku
+schneller lädt), nur bis in den schnellen SOC-Bereich laden und eine Säule auslassen.
+
+**Auflösung**: die App rechnet die Heizdauer mit 100 statt 400 Schritten (Abweichung höchstens 0,03 % bzw. 0,2 kWh
+in der Netzenergie über 36 Fahrzeug-/Strecken-/Temperatur-Kombinationen gemessen, etwa 4-mal schneller) –
+nötig, weil eine Front mehrere Läufe braucht. `plane_route` selbst rechnet weiter standardmäßig mit 400.
+
 ## Dateien
 
 Struktur und Namenskonvention (`lade_*`-Präfix) folgen dem übrigen Demo-Portfolio (siehe z. B.
 `dj_*` der Dijkstra-Demo oder `vrp_*` der VRP-Demo):
 
-- `lade_constants.py` – Regler-Wertebereiche, Standardwerte, die vier Fahrzeugtypen und die drei Beispielstrecken (Presets)
+- `lade_constants.py` – Regler-Wertebereiche, Standardwerte, die vier Fahrzeugtypen (inkl. Ladeleistung) und die drei Beispielstrecken (Presets)
+- `lade_ladekurve.py` – Ladekurve, Temperaturfaktor der Ladeleistung und Ladezeit mit geschlossener Stammfunktion
 - `lade_modell.py` – physikalisches Modell: temperaturabhängiger Verbrauch, temperaturabhängiger
   Ladewirkungsgrad, zeit-/leistungsbegrenzte Batterieheizung, Datenklassen für Fahrzeug und Strecke
 - `lade_planung.py` – dynamische Programmierung über (Haltepunkt, Akkustand) mit lokaler,
-  vektorisierter Heiz-/Ladesuche an jedem Stopp
+  vektorisierter Heiz-/Ladesuche an jedem Stopp; Zeitwert, Sicherheitsreserve bei jeder Ankunft und die
+  adaptive Pareto-Front (`pareto_front`)
 - `lade_szenario.py` – baut die `Strecke` aus Start/Etappen/Temperatur und verwaltet den Session State
   der frei einstellbaren Route (Presets, Anzahl Ladesäulen, Distanzen) sowie den Fahrzeugtyp-Callback
 - `lade_visualisierung.py` – Plotly-Diagramme (Akkustand über die Strecke, Netzenergie über die
-  Außentemperatur)
+  Außentemperatur, Pareto-Front aus Energie und Zeit)
 - `app.py` – reine Streamlit-Oberflächen-Orchestrierung
 - `tests/` – Korrektheitstests (Energiebilanz an jedem Stopp, Heizen nie schlechter als ohne Heizen,
   Diskretisierungs-Konvergenz, Batch-/Einzelsuche stimmen überein, AppTest-Smoke-Tests für Presets und
-  die konfigurierbare Route)
+  die konfigurierbare Route), dazu Ladekurve (`test_lade_ladekurve.py`), Zeit, Reserve und Regression gegen den
+  Stand vor dem Zeitkriterium (`test_lade_planung.py`) und das Orakel zur Front (`test_pareto_ladestrategie.py`)
 
 ## Zusammenhänge zu anderen Stücken des Portfolios
 
@@ -127,7 +180,7 @@ streamlit run app.py
 ## Verifikation
 
 ```
-pip install pytest numpy
+pip install pytest numpy scipy
 pytest
 ```
 

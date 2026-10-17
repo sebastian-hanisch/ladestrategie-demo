@@ -8,6 +8,12 @@ import plotly.graph_objects as go
 from lade_modell import Fahrzeug, Strecke
 from lade_planung import Ergebnis
 
+def dauer_text(stunden: float) -> str:
+    """Dauer als '6 h 47 min' (unter einer Stunde nur '47 min')."""
+    minuten = int(round(stunden * 60))
+    return f"{minuten // 60} h {minuten % 60:02d} min" if minuten >= 60 else f"{minuten} min"
+
+
 FARBE_AKKU = "#3E8E86"
 FARBE_GRENZE = "#D68A2E"
 FARBE_HALTEPUNKT = "#8A96A6"
@@ -53,5 +59,32 @@ def temperatur_sweep_figur(sweep: list[dict]) -> go.Figure:
     fig.update_layout(
         title="Netzenergie für die ganze Strecke, je nach Außentemperatur",
         xaxis_title="Außentemperatur (°C)", yaxis_title="Netzenergie gesamt (kWh)", height=420,
+    )
+    return fig
+
+
+FARBE_FRONT = "#3E8E86"
+FARBE_GEWAEHLT = "#D68A2E"
+
+
+def pareto_figur(front: list[Ergebnis], gewaehlt: Ergebnis) -> go.Figure:
+    """Pareto-Front: Netzenergie gegen Gesamtzeit der Pläne, die nicht von einem anderen in beidem
+    übertroffen werden, dazu der gewählte Plan (bei Zeitwert 0 der energieminimale)."""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=[e.gesamtzeit_h for e in front], y=[e.netzenergie_gesamt_kwh for e in front], mode="lines+markers",
+        name="nicht dominierte Pläne", line=dict(color=FARBE_FRONT, width=2), marker=dict(size=9),
+        customdata=[[e.ladezeit_gesamt_h * 60, sum(s.heiz_dauer_h for s in e.stopps) * 60, e.zeitwert_kwh_pro_h] for e in front],
+        hovertemplate="Gesamtzeit %{x:.2f} h<br>Netzenergie %{y:.1f} kWh<br>davon Laden %{customdata[0]:.0f} min<br>Heizen %{customdata[1]:.0f} min<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        x=[gewaehlt.gesamtzeit_h], y=[gewaehlt.netzenergie_gesamt_kwh], mode="markers", name="gewählter Plan",
+        marker=dict(size=15, symbol="star", color=FARBE_GEWAEHLT, line=dict(width=1, color="#444")),
+        hovertemplate="gewählt: %{x:.2f} h, %{y:.1f} kWh<extra></extra>",
+    ))
+    fig.update_layout(
+        title="Netzenergie gegen Gesamtzeit (links unten ist besser)",
+        xaxis_title="Gesamtzeit: Fahren + Laden (h)", yaxis_title="Netzenergie gesamt (kWh)", height=420,
+        legend=dict(orientation="h", y=-0.2),
     )
     return fig

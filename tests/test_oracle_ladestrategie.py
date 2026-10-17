@@ -1,7 +1,7 @@
 """Unabhängiges Orakel für die Lade-/Heizplanung (`plane_route`).
 
 Rechenweg des Orakels (anders als die DP der Demo): Bei **fester** Heizdauer je Stopp ist das Laden ein
-lineares Programm (Lademengen g_j >= 0, Akkustand-Schranken, Reserve am Ziel), gelöst mit
+lineares Programm (Lademengen g_j >= 0, Akkustand-Schranken, Reserve bei jeder Ankunft), gelöst mit
 `scipy.optimize.linprog` (HiGHS). Die Heizdauern werden außen auf einem Raster abgesucht; die
 Batterietemperatur kommt aus einer numerischen Integration (RK4) der Wärme-ODE statt aus der geschlossenen
 Formel der Demo. Das Ergebnis ist ein kontinuierliches Optimum (ohne SOC-Stufen) bis auf das Heizraster.
@@ -61,15 +61,15 @@ def _lp_bei_heizdauern(dist, t, basis, q, s0, reserve, p_kw, hs):
     kosten = np.array([1.0 / _eta(_t_batt(t, h, p_kw, c_k)) for h in hs])
     verbrauch = [_verbrauch_km(basis, t) * d for d in dist]
     a1 = s0 - verbrauch[0]
-    if a1 < -1e-9:
+    if a1 < reserve - 1e-9:
         return None
     a_ub, b_ub = [], []
     for j in range(m):
         basis_j = a1 + sum(-p_kw * hs[i] - verbrauch[i + 1] for i in range(j))  # Ankunft j ohne Ladungen
         zeile = np.zeros(m)
         zeile[:j] = 1.0
-        a_ub.append(-zeile)  # Ankunft - Heizenergie >= 0
-        b_ub.append(basis_j - p_kw * hs[j])
+        a_ub.append(-zeile)  # Ankunft - Heizenergie >= Reserve (die Reserve gilt bei JEDER Ankunft)
+        b_ub.append(basis_j - p_kw * hs[j] - reserve)
         zeile2 = np.zeros(m)
         zeile2[: j + 1] = 1.0
         a_ub.append(zeile2)  # Abfahrt <= Kapazität
@@ -87,7 +87,7 @@ def _orakel(dist, t, basis, q, s0, reserve, v, p_kw, raster):
     a1 = s0 - _verbrauch_km(basis, t) * dist[0]
     t_max = [dist[j] / v for j in range(m)]
     if p_kw > 0:
-        t_max[0] = min(t_max[0], max(a1, 0.0) / p_kw)
+        t_max[0] = min(t_max[0], max(a1 - reserve, 0.0) / p_kw)
     achsen = [np.linspace(0.0, t_max[j] if p_kw > 0 else 0.0, raster if p_kw > 0 else 1) for j in range(m)]
     beste = None
     for hs in itertools.product(*achsen):

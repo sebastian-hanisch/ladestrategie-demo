@@ -46,6 +46,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from lade_ladekurve import LADELEISTUNG_KW_STANDARD, STOPP_PAUSCHALE_H_STANDARD
+
 # ---------- Verbrauch ----------
 
 VERBRAUCH_T_REF_C = 20.0
@@ -123,9 +125,11 @@ class Fahrzeug:
     kapazitaet_kwh: float
     basisverbrauch_kwh_km: float  # bei Referenztemperatur 20 °C
     start_soc_kwh: float
-    reserve_kwh: float = 0.0  # Sicherheitsreserve, die am Ziel mindestens übrig bleiben muss
+    reserve_kwh: float = 0.0  # Sicherheitsreserve, die bei JEDER Ankunft (Säule und Ziel) mindestens übrig sein muss
     geschwindigkeit_kmh: float = 80.0  # bestimmt, wie viel Zeit fürs Heizen während eines Abschnitts bleibt
     heizleistung_kw: float = HEIZLEISTUNG_KW_STANDARD
+    ladeleistung_kw: float = LADELEISTUNG_KW_STANDARD  # maximale DC-Ladeleistung (siehe lade_ladekurve.py)
+    stopp_pauschale_h: float = STOPP_PAUSCHALE_H_STANDARD  # Zeit je Ladehalt, in dem tatsächlich geladen wird
 
     @property
     def waermekapazitaet_kwh_pro_grad(self) -> float:

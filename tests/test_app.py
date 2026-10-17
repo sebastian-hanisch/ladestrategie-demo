@@ -14,10 +14,10 @@ def test_app_startet_ohne_fehler():
     assert not at.exception
 
 
-def test_app_zeigt_drei_metriken_bei_erreichbarer_strecke():
+def test_app_zeigt_sechs_metriken_bei_erreichbarer_strecke():
     at = AppTest.from_file(APP, default_timeout=60)
     at.run()
-    assert len(at.metric) == 3
+    assert len(at.metric) == 6  # Energie (3) + Zeit (3)
     werte = [m.value for m in at.metric]
     assert all(w for w in werte)
 
@@ -117,7 +117,8 @@ def test_fahrzeugtyp_knoepfe_setzen_die_fahrzeugregler_und_bleiben_fehlerfrei():
         assert at.sidebar.slider(key="verbrauch_slider").value == werte["verbrauch"]
         assert at.sidebar.slider(key="heizleistung_slider").value == werte["heizleistung"]
         assert at.sidebar.slider(key="geschwindigkeit_slider").value == werte["geschwindigkeit"]
-        assert len(at.metric) == 3  # Strecke bleibt erreichbar
+        assert at.sidebar.slider(key="ladeleistung_slider").value == werte["ladeleistung"]
+        assert len(at.metric) == 6  # Strecke bleibt erreichbar
 
 
 def test_titel_und_einleitung_sind_fahrzeugunabhaengig():
@@ -125,3 +126,48 @@ def test_titel_und_einleitung_sind_fahrzeugunabhaengig():
     at.run()
     assert "Elektrofahrzeug" in at.title[0].value
     assert "Lieferfahrzeug" not in at.title[0].value
+
+
+def test_neue_regler_fuer_laden_reserve_und_zeitwert_sind_vorhanden_mit_alten_standardwerten():
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    assert at.sidebar.slider(key="ladeleistung_slider").value == 115.0
+    assert at.sidebar.slider(key="pauschale_slider").value == 5
+    assert at.sidebar.slider(key="reserve_slider").value == 0
+    assert at.sidebar.select_slider(key="zeitwert_select").value == 0
+
+
+def test_abschnitt_energie_gegen_zeit_ist_vorhanden():
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    assert any("Energie gegen Zeit" in h.value for h in at.header)
+
+
+def test_zeitmetriken_zeigen_gesamt_und_ladezeit():
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    labels = [m.label for m in at.metric]
+    assert any("Gesamtzeit" in l for l in labels)
+    assert any("Laden" in l for l in labels)
+
+
+def test_zeitwert_reserve_und_ladeleistung_aendern_das_ergebnis_fehlerfrei():
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    vorher = [m.value for m in at.metric]
+    at.sidebar.select_slider(key="zeitwert_select").set_value(100).run()
+    assert not at.exception
+    at.sidebar.slider(key="reserve_slider").set_value(10).run()
+    assert not at.exception
+    at.sidebar.slider(key="ladeleistung_slider").set_value(50.0).run()
+    assert not at.exception
+    assert [m.value for m in at.metric] != vorher
+
+
+def test_zu_grosse_reserve_zeigt_fehlermeldung_statt_abzustuerzen():
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    at.sidebar.slider(key="reserve_slider").set_value(30).run()
+    at.button[2].click().run()  # Langstrecke, dünn besäult: 150-km-Abschnitte lassen bei 30 % Reserve keinen Spielraum
+    assert not at.exception
+    assert len(at.error) >= 1
