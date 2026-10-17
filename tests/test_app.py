@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -205,3 +206,75 @@ def test_ueberschrift_und_piktogramm_stehen_in_einem_festen_kopf_container():
     at.run()
     assert "st-key-kopf" in _kopf_html(at)  # das Stylesheet setzt an der Klasse des Containers an
     assert at.title[0].value
+
+
+def _preset_typen(at) -> list[str]:
+    """Button-Typen der drei Preset-Buttons (die ersten drei Buttons der Sidebar)."""
+    return [b.proto.type for b in at.sidebar.button][:3]
+
+
+def test_beim_start_ist_die_standardstrecke_hervorgehoben():
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    assert _preset_typen(at) == ["primary", "secondary", "secondary"]
+
+
+def test_angeklicktes_preset_bleibt_hervorgehoben_solange_nichts_geaendert_wird():
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    at.button[2].click().run()
+    assert _preset_typen(at) == ["secondary", "secondary", "primary"]
+    at.run()  # ein weiterer Lauf ohne Änderung
+    assert _preset_typen(at) == ["secondary", "secondary", "primary"]
+
+
+@pytest.mark.parametrize(
+    "aendern",
+    [
+        lambda at: at.sidebar.number_input(key="distanz_0").set_value(55.0),
+        lambda at: at.sidebar.slider(key="temperatur_slider").set_value(-12),
+        lambda at: at.sidebar.slider(key="kapazitaet_slider").set_value(100),
+        lambda at: at.sidebar.slider(key="reserve_slider").set_value(10),
+        lambda at: at.sidebar.select_slider(key="zeitwert_select").set_value(20),
+        lambda at: at.sidebar.toggle(key="heizen_toggle").set_value(False),
+        lambda at: at.sidebar.slider(key="anzahl_saeulen_slider").set_value(4),
+        lambda at: at.sidebar.selectbox(key="fahrzeugtyp").set_value("Pkw"),
+    ],
+)
+def test_jede_aenderung_einer_einstellung_hebt_die_hervorhebung_auf(aendern):
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    at.button[1].click().run()
+    assert _preset_typen(at) == ["secondary", "primary", "secondary"]
+    aendern(at).run()
+    assert not at.exception
+    assert _preset_typen(at) == ["secondary", "secondary", "secondary"]
+
+
+def test_erneutes_anklicken_nach_einer_aenderung_hebt_das_preset_wieder_hervor():
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    at.sidebar.slider(key="temperatur_slider").set_value(-12).run()
+    assert _preset_typen(at) == ["secondary", "secondary", "secondary"]
+    at.button[0].click().run()
+    assert _preset_typen(at) == ["primary", "secondary", "secondary"]
+
+
+def test_wechsel_auf_ein_anderes_preset_verschiebt_die_hervorhebung():
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    at.button[1].click().run()
+    at.button[2].click().run()
+    assert _preset_typen(at) == ["secondary", "secondary", "primary"]
+
+
+def test_strecke_ohne_ladebedarf_laesst_den_heizvergleich_nicht_abstuerzen():
+    """Voller Akku, kurze Strecke: auch bei -20 °C fließt keine Netzenergie. Der Satz unter dem Heiz-Diagramm
+    teilt sonst durch 0 kWh."""
+    at = AppTest.from_file(APP, default_timeout=60)
+    at.run()
+    at.button[1].click().run()  # Kurzstrecke, dicht besäult
+    at.sidebar.slider(key="kapazitaet_slider").set_value(700).run()
+    assert not at.exception
+    texte = " ".join(c.value for c in at.caption)
+    assert "nicht geladen werden" in texte

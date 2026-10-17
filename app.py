@@ -59,11 +59,13 @@ from lade_modell import (
 from lade_planung import Ergebnis, front_hat_zielkonflikt, pareto_front, plane_route
 from lade_piktogramme import fahrzeug_piktogramm, kopf_css
 from lade_szenario import (
+    aktives_preset,
     anwenden_fahrzeugtyp,
     anwenden_preset,
     baue_strecke,
     etappen_namen_fuer,
     init_session_state_defaults,
+    merke_preset_einstellungen,
 )
 from lade_visualisierung import dauer_text as _dauer_text
 from lade_visualisierung import pareto_figur, soc_verlauf_figur, temperatur_sweep_figur
@@ -104,8 +106,9 @@ st.markdown(
 with st.sidebar:
     st.header("🎯 Schnellstart")
     st.caption("Ein Beispielszenario laden (setzt Start und Distanzen der Strecke):")
+    aktiv = aktives_preset()
     for name in PRESET_NAMEN:
-        st.button(name, on_click=anwenden_preset, args=(name,), width="stretch")
+        st.button(name, on_click=anwenden_preset, args=(name,), width="stretch", type="primary" if aktiv == name else "secondary")
 
     st.header("Fahrzeugtyp")
     st.caption("Setzt Kapazität, Verbrauch, Heizleistung, Ladeleistung und Geschwindigkeit; alle Regler bleiben danach frei einstellbar.")
@@ -135,6 +138,8 @@ with st.sidebar:
     pauschale_min = st.slider("Zeit je Ladehalt (min)", STOPP_PAUSCHALE_MIN_MIN, STOPP_PAUSCHALE_MIN_MAX, STOPP_PAUSCHALE_MIN_STANDARD, key="pauschale_slider", help="Anfahrt, Anstecken, Freigabe - fällt nur an, wenn an der Säule tatsächlich geladen wird.")
     reserve_prozent = st.slider("Sicherheitsreserve (% der Kapazität)", RESERVE_PROZENT_MIN, RESERVE_PROZENT_MAX, RESERVE_PROZENT_STANDARD, step=5, key="reserve_slider", help="Mindest-Akkustand bei JEDER Ankunft (Ladesäule und Ziel). Vorheizen darf die Reserve nicht unterschreiten.")
     zeitwert = st.select_slider("Wert einer Stunde Ladezeit (kWh)", options=ZEITWERT_OPTIONEN, value=ZEITWERT_STANDARD, key="zeitwert_select", help="0 = nur die Netzenergie zählt (bei Gleichstand der schnellere Plan). Größere Werte bevorzugen schnelle Pläne: so viele kWh Netzenergie wäre dem Plan eine Stunde weniger Ladezeit wert.")
+
+merke_preset_einstellungen()
 
 alle_namen = tuple([start_name] + etappen_namen)
 alle_distanzen = tuple(float(d) for d in distanzen)
@@ -215,14 +220,18 @@ def _temperatur_sweep(namen: tuple[str, ...], distanzen: tuple[float, ...], f: F
 sweep = _temperatur_sweep(alle_namen, alle_distanzen, fahrzeug, float(zeitwert))
 if sweep:
     st.plotly_chart(temperatur_sweep_figur(sweep), width="stretch")
+    ohne_bei_kaelte = next((z["ohne_heizen"] for z in sweep if z["temperatur"] == -20), None)
     ersparnis_bei_kaelte = next((z["ohne_heizen"] - z["mit_heizen"] for z in sweep if z["temperatur"] == -20), None)
     ersparnis_bei_mild = next((z["ohne_heizen"] - z["mit_heizen"] for z in sweep if z["temperatur"] == 10), None)
     if ersparnis_bei_kaelte is not None and ersparnis_bei_mild is not None:
-        st.caption(
-            f"Bei -20 °C spart Heizen {ersparnis_bei_kaelte:.1f} kWh auf dieser Strecke "
-            f"({ersparnis_bei_kaelte / next(z['ohne_heizen'] for z in sweep if z['temperatur'] == -20) * 100:.1f} % weniger Netzenergie), "
-            f"bei +10 °C nur noch {ersparnis_bei_mild:.1f} kWh - der Effekt nimmt mit steigender Temperatur ab und ist in milden Wintern gering."
-        )
+        if ohne_bei_kaelte > 1e-9:
+            st.caption(
+                f"Bei -20 °C spart Heizen {ersparnis_bei_kaelte:.1f} kWh auf dieser Strecke "
+                f"({ersparnis_bei_kaelte / ohne_bei_kaelte * 100:.1f} % weniger Netzenergie), "
+                f"bei +10 °C nur noch {ersparnis_bei_mild:.1f} kWh - der Effekt nimmt mit steigender Temperatur ab und ist in milden Wintern gering."
+            )
+        else:
+            st.caption("Auf dieser Strecke muss auch bei -20 °C nicht geladen werden - dann gibt es nichts, was Heizen sparen könnte.")
 else:
     st.info("Für diese Strecke/dieses Fahrzeug ist nicht jede Temperatur im Bereich erreichbar - der Vergleich wird übersprungen.")
 

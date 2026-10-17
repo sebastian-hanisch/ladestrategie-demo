@@ -44,6 +44,10 @@ def anwenden_preset(name: str) -> None:
     for i, (etappen_name, distanz) in enumerate(preset["etappen"]):
         st.session_state[_distanz_key(i)] = distanz
     st.session_state["etappen_namen"] = [n for n, _ in preset["etappen"]]
+    # Merken, welches Preset gilt; der Stand aller Einstellungen wird erst nach dem Zeichnen der Regler festgehalten
+    # (merke_preset_einstellungen), weil nicht jeder Regler schon im Session State steht.
+    st.session_state["aktives_preset"] = name
+    st.session_state["preset_einstellungen"] = None
 
 
 def anwenden_fahrzeugtyp(name: str) -> None:
@@ -73,3 +77,38 @@ def etappen_namen_fuer(anzahl_saeulen: int) -> list[str]:
         if key not in st.session_state:
             st.session_state[key] = float(DISTANZ_MIN) * 3  # ein unauffaelliger, sicher zulaessiger Startwert
     return namen
+
+
+# Alle Regler, die zum Szenario gehören: ändert sich einer davon, ist das Preset nicht mehr "unverändert".
+_EINSTELLUNGS_KEYS = (
+    "start_name", "anzahl_saeulen_slider", "temperatur_slider", "kapazitaet_slider", "verbrauch_slider",
+    "start_soc_slider", "geschwindigkeit_slider", "heizleistung_slider", "heizen_toggle", "ladeleistung_slider",
+    "pauschale_slider", "reserve_slider", "zeitwert_select", "fahrzeugtyp",
+)
+
+
+def aktuelle_einstellungen() -> dict:
+    """Stand aller Szenario-Regler (inkl. der Distanzen der gerade sichtbaren Abschnitte und deren Namen)."""
+    stand = {key: st.session_state.get(key) for key in _EINSTELLUNGS_KEYS}
+    anzahl = st.session_state.get("anzahl_saeulen_slider") or 0
+    stand["distanzen"] = tuple(st.session_state.get(_distanz_key(i)) for i in range(anzahl + 1))
+    stand["etappen_namen"] = tuple(st.session_state.get("etappen_namen", ()))
+    return stand
+
+
+def merke_preset_einstellungen() -> None:
+    """Nach dem Zeichnen aller Regler aufrufen: hält den Stand fest, der direkt nach dem Anwenden eines Presets
+    galt (die Fahrzeug- und Wetterregler stehen vorher noch nicht alle im Session State)."""
+    if st.session_state.get("aktives_preset") and st.session_state.get("preset_einstellungen") is None:
+        st.session_state["preset_einstellungen"] = aktuelle_einstellungen()
+
+
+def aktives_preset() -> str | None:
+    """Name des Presets, solange seitdem keine Einstellung geändert wurde, sonst None."""
+    name = st.session_state.get("aktives_preset")
+    if not name:
+        return None
+    gemerkt = st.session_state.get("preset_einstellungen")
+    if gemerkt is None:  # gerade angewendet, der Stand wird erst nach dem Zeichnen der Regler gemerkt
+        return name
+    return name if aktuelle_einstellungen() == gemerkt else None
