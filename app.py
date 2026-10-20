@@ -103,6 +103,17 @@ st.markdown(
     "wie sich Energie und Zeit gegeneinander aufwiegen, zeigt Abschnitt 3."
 )
 
+# erklaerseite:einfach:start (erzeugt von tools/set_demo_explainer.py (Website-Repo) aus tools/content/explainers/ladestrategie-winter-erklaert.json, nicht von Hand ändern)
+with st.expander("💬 In einfachen Worten"):
+    st.markdown(
+        """
+Im Winter braucht ein Elektrofahrzeug mehr Energie pro Kilometer, und beim Laden geht mehr davon als Wärme verloren, weil kalte Zellen einen höheren Innenwiderstand haben. Die Demo fragt für eine Strecke mit Schnellladesäulen: Wie viel soll an jeder Säule geladen werden, und wie lange soll der Akku vorher während der Fahrt geheizt werden? Heizen kostet selbst Energie, kann sich aber lohnen, wenn es an der nächsten Säule genug Ladeverlust erspart. Gesucht ist die Strategie, die insgesamt am wenigsten Energie aus dem Netz zieht, nicht die schnellste. Die Werte stammen aus Studien an Pkw und übertragen sich auf andere Fahrzeuge nur näherungsweise.
+
+[Ausführlich und verständlich erklärt, mit Fachteil](https://sebastianhanisch.net/ladestrategie-winter-erklaert.html)
+        """
+    )
+# erklaerseite:einfach:end
+
 with st.sidebar:
     st.header("🎯 Schnellstart")
     st.caption("Ein Beispielszenario laden (setzt Start und Distanzen der Strecke):")
@@ -314,6 +325,27 @@ with st.expander("📐 Modellannahmen und Quellen"):
     )
 
 with st.expander("📐 Mathematische Formulierung"):
+    # erklaerseite:lesehilfe:start (erzeugt von tools/set_demo_explainer.py (Website-Repo) aus tools/content/explainers/ladestrategie-winter-erklaert.json, nicht von Hand ändern)
+    st.markdown(
+        r"""
+**Lesehilfe.** Gegeben sind die Strecke mit den Distanzen und der Außentemperatur, das Fahrzeug (Kapazität, Verbrauch, Heizleistung, Geschwindigkeit) und der Akkustand am Start. Gesucht ist die Lade- und Heizentscheidung an jeder Säule, die die insgesamt aus dem Netz gezogene Energie minimiert.
+
+| Symbol | Bedeutung |
+|---|---|
+| $j$, $n$ | Haltepunkt (0 = Start, $n$ = Ziel), Zahl der Segmente |
+| $d_j$, $t_j$ | Distanz und Fahrzeit des Segments $j$ |
+| $T$, $T_{batt}$ | Außentemperatur, Batterietemperatur |
+| $Q$, $P$ | Batteriekapazität, Heizleistung |
+| $s$, $s^{ank}$, $s^{ab}$ | Akkustand, bei Ankunft, bei Abfahrt |
+| $h$, $\bar h$ | Heizdauer, größtmögliche Heizdauer |
+| $\eta(\cdot)$ | Ladewirkungsgrad in Abhängigkeit von der Batterietemperatur |
+| $r$, $k$, $\tau$ | Heizrate, Wärmeverlustrate $k = 1/\tau$, thermische Zeitkonstante |
+| $f_j(s)$ | minimale Netzenergie, um Haltepunkt $j$ mit Akkustand $s$ zu erreichen |
+
+[Schritt für Schritt erklärt, mit Herleitung und Literatur](https://sebastianhanisch.net/ladestrategie-winter-erklaert.html#fachleute)
+        """
+    )
+    # erklaerseite:lesehilfe:end
     st.markdown(
         r"""
 **Gegeben:**
