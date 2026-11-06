@@ -398,8 +398,7 @@ $g(T_{batt})$ ist der Temperaturfaktor der Ladeleistung, $\tau(x) = \int_0^x \ma
 (1 bis $x_0 = 0{,}8$, danach linear fallend auf 0,2): $\tau(x) = x$ für $x \le x_0$, sonst $x_0 - \ln(1 - a(x-x_0))/a$ mit $a = 0{,}8/0{,}2 = 4$.
 
 Keine geschlossene Lösung für das optimale $h$: $\eta(T_{batt}(h))$ sättigt (Wärmeverlust), während
-die benötigte Lademenge $s^{ab}-(s^{ank}-Ph)$ mit $h$ linear sinkt und bei $Ph=s^{ab}-s^{ank}$ auf
-0 fällt - das Produkt ist nicht garantiert konvex in $h$, deshalb eine endliche Rastersuche
+die benötigte Lademenge $s^{ab}-(s^{ank}-Ph)$ mit $h$ linear steigt (Heizen verbraucht Akkuenergie) - das Produkt ist nicht garantiert konvex in $h$, deshalb eine endliche Rastersuche
 (`heiz_aufloesung`, Standard 400 Schritte) statt einer Ableitung.
 
 **Bellman-Rekursion** (`plane_route`): $f_j(s)$ = minimale Netzenergie, um Haltepunkt $j$ mit
