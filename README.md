@@ -109,7 +109,7 @@ Das Zeitkriterium wird zusätzlich gegen eine **vollständige Aufzählung** alle
 14 SOC-Stufen, 6 Heizschritte) geprüft; die Ladezeit wird dort per Mittelpunktsregel numerisch integriert statt
 aus der geschlossenen Formel berechnet (`tests/test_pareto_ladestrategie.py`). Der Plan ist nie besser als das exakte
 Optimum, trifft es in der Mehrheit der Fälle exakt (gemessen 23 von 30 Zeitwert-Instanz-Paaren) und liegt sonst höchstens etwa eine Stufe je
-Säule darüber. Eine LP-Epigraph-Formulierung wie beim Energie-Orakel trägt hier nicht: die Ladezeit
+Säule darüber. Eine LP-Epigraph-Formulierung wie beim Energie-Orakel reicht hier nicht: die Ladezeit
 τ(Abfahrt) − τ(Stand nach dem Heizen) ist gemeinsam in beiden Akkustand-Variablen nicht konvex.
 
 ## Energie gegen Zeit: Methode und Befund
